@@ -476,7 +476,7 @@ mod testsuit {
         let contract_id = env.register_contract(None, BillPayments);
         let client = BillPaymentsClient::new(&env, &contract_id);
         let owner = <soroban_sdk::Address as AddressTrait>::generate(&env);
-        
+
         env.mock_all_auths();
         let bill_id = client.create_bill(
             &owner,
@@ -493,7 +493,7 @@ mod testsuit {
 
         // Pay it
         client.pay_bill(&owner, &bill_id);
-        
+
         // Verify it's no longer overdue (because it's paid)
         let overdue_after = client.get_overdue_bills();
         assert_eq!(overdue_after.len(), 0);

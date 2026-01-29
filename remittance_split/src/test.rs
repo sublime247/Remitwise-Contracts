@@ -13,8 +13,7 @@ fn test_initialize_split() {
     env.mock_all_auths();
 
     let success = client.initialize_split(
-        &owner,
-        &50, // spending
+        &owner, &50, // spending
         &30, // savings
         &15, // bills
         &5,  // insurance
@@ -41,11 +40,8 @@ fn test_initialize_split_invalid_sum() {
     env.mock_all_auths();
 
     client.initialize_split(
-        &owner,
-        &50, 
-        &50, 
-        &10, // Sums to 110
-        &0,  
+        &owner, &50, &50, &10, // Sums to 110
+        &0,
     );
 }
 
@@ -75,13 +71,7 @@ fn test_update_split() {
 
     client.initialize_split(&owner, &50, &30, &15, &5);
 
-    let success = client.update_split(
-        &owner,
-        &40,
-        &40,
-        &10,
-        &10
-    );
+    let success = client.update_split(&owner, &40, &40, &10, &10);
     assert!(success);
 
     let config = client.get_config().unwrap();
@@ -120,12 +110,12 @@ fn test_calculate_split() {
 
     // Test with 1000 units
     let amounts = client.calculate_split(&1000);
-    
+
     // spending: 50% of 1000 = 500
     // savings: 30% of 1000 = 300
     // bills: 15% of 1000 = 150
     // insurance: remainder = 1000 - 500 - 300 - 150 = 50
-    
+
     assert_eq!(amounts.get(0).unwrap(), 500);
     assert_eq!(amounts.get(1).unwrap(), 300);
     assert_eq!(amounts.get(2).unwrap(), 150);
@@ -146,10 +136,10 @@ fn test_calculate_split_rounding() {
 
     // Total 100
     // 33% = 33
-    // Remainder should go to last one (insurance) logic in contract: 
+    // Remainder should go to last one (insurance) logic in contract:
     // insurance = total - spending - savings - bills
     // 100 - 33 - 33 - 33 = 1. Correct.
-    
+
     let amounts = client.calculate_split(&100);
     assert_eq!(amounts.get(0).unwrap(), 33);
     assert_eq!(amounts.get(1).unwrap(), 33);
@@ -167,7 +157,7 @@ fn test_calculate_split_zero_amount() {
 
     env.mock_all_auths();
     client.initialize_split(&owner, &50, &30, &15, &5);
-    
+
     client.calculate_split(&0);
 }
 
@@ -181,7 +171,7 @@ fn test_calculate_complex_rounding() {
     env.mock_all_auths();
     // 17, 19, 23, 41 (Primes summing to 100)
     client.initialize_split(&owner, &17, &19, &23, &41);
-    
+
     // Amount 1000
     // 17% = 170
     // 19% = 190

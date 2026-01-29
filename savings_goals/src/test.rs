@@ -194,12 +194,12 @@ fn test_withdraw_from_goal() {
     client.init();
     env.mock_all_auths();
     let id = client.create_goal(&user, &String::from_str(&env, "W"), &1000, &2000000000);
-    
+
     // Unlock first (created locked)
     client.unlock_goal(&user, &id);
 
     client.add_to_goal(&user, &id, &500);
-    
+
     let new_balance = client.withdraw_from_goal(&user, &id, &200);
     assert_eq!(new_balance, 300);
 
@@ -218,10 +218,10 @@ fn test_withdraw_too_much() {
     client.init();
     env.mock_all_auths();
     let id = client.create_goal(&user, &String::from_str(&env, "W"), &1000, &2000000000);
-    
+
     client.unlock_goal(&user, &id);
     client.add_to_goal(&user, &id, &100);
-    
+
     client.withdraw_from_goal(&user, &id, &200);
 }
 
@@ -236,7 +236,7 @@ fn test_withdraw_locked() {
     client.init();
     env.mock_all_auths();
     let id = client.create_goal(&user, &String::from_str(&env, "L"), &1000, &2000000000);
-    
+
     // Goal is locked by default
     client.add_to_goal(&user, &id, &500);
     client.withdraw_from_goal(&user, &id, &100);
@@ -254,10 +254,10 @@ fn test_withdraw_unauthorized() {
     client.init();
     env.mock_all_auths();
     let id = client.create_goal(&user, &String::from_str(&env, "Auth"), &1000, &2000000000);
-    
+
     client.unlock_goal(&user, &id);
     client.add_to_goal(&user, &id, &500);
-    
+
     client.withdraw_from_goal(&other, &id, &100);
 }
 
@@ -294,10 +294,10 @@ fn test_full_withdrawal() {
     client.init();
     env.mock_all_auths();
     let id = client.create_goal(&user, &String::from_str(&env, "W"), &1000, &2000000000);
-    
+
     client.unlock_goal(&user, &id);
     client.add_to_goal(&user, &id, &500);
-    
+
     // Withdraw everything
     let new_balance = client.withdraw_from_goal(&user, &id, &500);
     assert_eq!(new_balance, 0);
@@ -317,14 +317,14 @@ fn test_exact_goal_completion() {
     client.init();
     env.mock_all_auths();
     let id = client.create_goal(&user, &String::from_str(&env, "Exact"), &1000, &2000000000);
-    
+
     // Add 500 twice
     client.add_to_goal(&user, &id, &500);
     assert!(!client.is_goal_completed(&id));
-    
+
     client.add_to_goal(&user, &id, &500);
     assert!(client.is_goal_completed(&id));
-    
+
     let goal = client.get_goal(&id).unwrap();
     assert_eq!(goal.current_amount, 1000);
 }

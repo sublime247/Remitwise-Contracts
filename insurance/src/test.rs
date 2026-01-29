@@ -1,7 +1,10 @@
 #![cfg(test)]
 
 use super::*;
-use soroban_sdk::{testutils::{Address as _, Ledger}, Address, Env, String};
+use soroban_sdk::{
+    testutils::{Address as _, Ledger},
+    Address, Env, String,
+};
 
 #[test]
 fn test_create_policy() {
@@ -14,13 +17,13 @@ fn test_create_policy() {
 
     let name = String::from_str(&env, "Health Policy");
     let coverage_type = String::from_str(&env, "Health");
-    
+
     let policy_id = client.create_policy(
         &owner,
         &name,
         &coverage_type,
-        &100,      // monthly_premium
-        &10000,    // coverage_amount
+        &100,   // monthly_premium
+        &10000, // coverage_amount
     );
 
     assert_eq!(policy_id, 1);
@@ -94,14 +97,14 @@ fn test_pay_premium() {
 
     // Advance ledger time to simulate paying slightly later
     let mut ledger_info = env.ledger().get();
-    ledger_info.timestamp += 1000; 
+    ledger_info.timestamp += 1000;
     env.ledger().set(ledger_info);
 
     let success = client.pay_premium(&owner, &policy_id);
     assert!(success);
 
     let updated_policy = client.get_policy(&policy_id).unwrap();
-    
+
     // New validation logic: new due date should be current timestamp + 30 days
     // Since we advanced timestamp by 1000, the new due date should be > initial due date
     assert!(updated_policy.next_payment_date > initial_due);
@@ -191,7 +194,7 @@ fn test_get_active_policies() {
 
     let active = client.get_active_policies(&owner);
     assert_eq!(active.len(), 2);
-    
+
     // Check specific IDs if needed, but length 2 confirms one was filtered
 }
 
@@ -245,7 +248,7 @@ fn test_multiple_premium_payments() {
 
     // First payment
     client.pay_premium(&owner, &policy_id);
-    
+
     // Simulate time passing (still before next due)
     let mut ledger = env.ledger().get();
     ledger.timestamp += 5000;
@@ -255,10 +258,13 @@ fn test_multiple_premium_payments() {
     client.pay_premium(&owner, &policy_id);
 
     let p2 = client.get_policy(&policy_id).unwrap();
-    
+
     // The logic in contract sets next_payment_date to 'now + 30 days'
     // So paying twice in quick succession just pushes it to 30 days from the SECOND payment
     // It does NOT add 60 days from start. This test verifies that behavior.
     assert!(p2.next_payment_date > first_due);
-    assert_eq!(p2.next_payment_date, env.ledger().timestamp() + (30 * 86400));
+    assert_eq!(
+        p2.next_payment_date,
+        env.ledger().timestamp() + (30 * 86400)
+    );
 }

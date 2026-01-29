@@ -102,7 +102,9 @@ cargo test
 
 ## Deployment
 
-Deploy to testnet:
+See the [Deployment Guide](DEPLOYMENT.md) for comprehensive deployment instructions.
+
+Quick deploy to testnet:
 
 ```bash
 soroban contract deploy \
