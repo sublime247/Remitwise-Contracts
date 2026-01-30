@@ -13,7 +13,8 @@ fn test_initialize_split() {
     env.mock_all_auths();
 
     let success = client.initialize_split(
-        &owner, &50, // spending
+        &owner, &0,  // nonce
+        &50, // spending
         &30, // savings
         &15, // bills
         &5,  // insurance
@@ -40,7 +41,8 @@ fn test_initialize_split_invalid_sum() {
     env.mock_all_auths();
 
     client.initialize_split(
-        &owner, &50, &50, &10, // Sums to 110
+        &owner, &0, // nonce
+        &50, &50, &10, // Sums to 110
         &0,
     );
 }
@@ -55,9 +57,9 @@ fn test_initialize_split_already_initialized() {
 
     env.mock_all_auths();
 
-    client.initialize_split(&owner, &50, &30, &15, &5);
+    client.initialize_split(&owner, &0, &50, &30, &15, &5);
     // Second init should fail
-    client.initialize_split(&owner, &50, &30, &15, &5);
+    client.initialize_split(&owner, &1, &50, &30, &15, &5);
 }
 
 #[test]
@@ -69,9 +71,9 @@ fn test_update_split() {
 
     env.mock_all_auths();
 
-    client.initialize_split(&owner, &50, &30, &15, &5);
+    client.initialize_split(&owner, &0, &50, &30, &15, &5);
 
-    let success = client.update_split(&owner, &40, &40, &10, &10);
+    let success = client.update_split(&owner, &1, &40, &40, &10, &10);
     assert!(success);
 
     let config = client.get_config().unwrap();
@@ -92,9 +94,9 @@ fn test_update_split_unauthorized() {
 
     env.mock_all_auths();
 
-    client.initialize_split(&owner, &50, &30, &15, &5);
+    client.initialize_split(&owner, &0, &50, &30, &15, &5);
 
-    client.update_split(&other, &40, &40, &10, &10);
+    client.update_split(&other, &0, &40, &40, &10, &10);
 }
 
 #[test]
@@ -106,7 +108,7 @@ fn test_calculate_split() {
 
     env.mock_all_auths();
 
-    client.initialize_split(&owner, &50, &30, &15, &5);
+    client.initialize_split(&owner, &0, &50, &30, &15, &5);
 
     // Test with 1000 units
     let amounts = client.calculate_split(&1000);
@@ -132,7 +134,7 @@ fn test_calculate_split_rounding() {
     env.mock_all_auths();
 
     // 33, 33, 33, 1 setup
-    client.initialize_split(&owner, &33, &33, &33, &1);
+    client.initialize_split(&owner, &0, &33, &33, &33, &1);
 
     // Total 100
     // 33% = 33
@@ -156,7 +158,7 @@ fn test_calculate_split_zero_amount() {
     let owner = Address::generate(&env);
 
     env.mock_all_auths();
-    client.initialize_split(&owner, &50, &30, &15, &5);
+    client.initialize_split(&owner, &0, &50, &30, &15, &5);
 
     client.calculate_split(&0);
 }
@@ -170,7 +172,7 @@ fn test_calculate_complex_rounding() {
 
     env.mock_all_auths();
     // 17, 19, 23, 41 (Primes summing to 100)
-    client.initialize_split(&owner, &17, &19, &23, &41);
+    client.initialize_split(&owner, &0, &17, &19, &23, &41);
 
     // Amount 1000
     // 17% = 170
