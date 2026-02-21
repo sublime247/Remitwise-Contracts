@@ -9,7 +9,7 @@ const SPLIT_INITIALIZED: Symbol = symbol_short!("init");
 const SPLIT_CALCULATED: Symbol = symbol_short!("calc");
 
 // Event data structures
-#[derive(Clone)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 #[contracttype]
 pub struct SplitInitializedEvent {
     pub spending_percent: u32,
@@ -64,9 +64,10 @@ pub struct SplitConfig {
     pub bills_percent: u32,
     pub insurance_percent: u32,
     pub timestamp: u64,
+    pub initialized: bool,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 #[contracttype]
 pub struct SplitCalculatedEvent {
     pub total_amount: i128,
@@ -80,7 +81,7 @@ pub struct SplitCalculatedEvent {
 
 /// Events emitted by the contract for audit trail
 #[contracttype]
-#[derive(Clone)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SplitEvent {
     Initialized,
     Updated,
@@ -192,6 +193,7 @@ impl RemittanceSplit {
             bills_percent,
             insurance_percent,
             timestamp: env.ledger().timestamp(),
+            initialized: true,
         };
 
         env.storage()

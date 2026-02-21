@@ -2,8 +2,8 @@
 
 use super::*;
 use soroban_sdk::{
-    testutils::{Address as AddressTrait, Ledger, LedgerInfo},
-    Address, Env,
+    testutils::{Address as AddressTrait, Events, Ledger, LedgerInfo},
+    Address, Env, IntoVal, Symbol, TryFromVal, Val, Vec,
 };
 
 fn set_time(env: &Env, timestamp: u64) {
@@ -327,4 +327,92 @@ fn test_remittance_schedule_zero_amount() {
 
     let result = client.try_create_remittance_schedule(&owner, &0, &3000, &86400);
     assert!(result.is_err());
+}
+#[test]
+fn test_initialize_split_events() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, RemittanceSplit);
+    let client = RemittanceSplitClient::new(&env, &contract_id);
+    let owner = Address::generate(&env);
+
+    env.mock_all_auths();
+
+    client.initialize_split(&owner, &0, &50, &30, &15, &5);
+
+    let events = env.events().all();
+    let last_event = events.last().unwrap();
+
+    // The event emitted is: env.events().publish((symbol_short!("split"), SplitEvent::Initialized), owner);
+    assert_eq!(last_event.0, contract_id);
+
+    let topics = &last_event.1;
+    let topic0: Symbol = Symbol::try_from_val(&env, &topics.get(0).unwrap()).unwrap();
+    let topic1: SplitEvent = SplitEvent::try_from_val(&env, &topics.get(1).unwrap()).unwrap();
+    assert_eq!(topic0, symbol_short!("split"));
+    assert_eq!(topic1, SplitEvent::Initialized);
+
+    let data: Address = Address::try_from_val(&env, &last_event.2).unwrap();
+    assert_eq!(data, owner);
+}
+
+#[test]
+fn test_update_split_events() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, RemittanceSplit);
+    let client = RemittanceSplitClient::new(&env, &contract_id);
+    let owner = Address::generate(&env);
+
+    env.mock_all_auths();
+
+    client.initialize_split(&owner, &0, &50, &30, &15, &5);
+    client.update_split(&owner, &1, &40, &40, &10, &10);
+
+    let events = env.events().all();
+    // update_split publishes two events:
+    // 1. (SPLIT_INITIALIZED,), event
+    // 2. (symbol_short!("split"), SplitEvent::Updated), caller
+    let last_event = events.last().unwrap();
+
+    assert_eq!(last_event.0, contract_id);
+
+    let topics = &last_event.1;
+    let topic0: Symbol = Symbol::try_from_val(&env, &topics.get(0).unwrap()).unwrap();
+    let topic1: SplitEvent = SplitEvent::try_from_val(&env, &topics.get(1).unwrap()).unwrap();
+    assert_eq!(topic0, symbol_short!("split"));
+    assert_eq!(topic1, SplitEvent::Updated);
+
+    let data: Address = Address::try_from_val(&env, &last_event.2).unwrap();
+    assert_eq!(data, owner);
+}
+
+#[test]
+fn test_calculate_split_events() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, RemittanceSplit);
+    let client = RemittanceSplitClient::new(&env, &contract_id);
+    let owner = Address::generate(&env);
+
+    env.mock_all_auths();
+
+    client.initialize_split(&owner, &0, &50, &30, &15, &5);
+
+    let total_amount = 1000i128;
+    client.calculate_split(&total_amount);
+
+    let events = env.events().all();
+    // calculate_split publishes two events:
+    // 1. (SPLIT_CALCULATED,), event
+    // 2. (symbol_short!("split"), SplitEvent::Calculated), total_amount
+    let last_event = events.last().unwrap();
+
+    assert_eq!(last_event.0, contract_id);
+
+    let topics = &last_event.1;
+    let topic0: Symbol = Symbol::try_from_val(&env, &topics.get(0).unwrap()).unwrap();
+    let topic1: SplitEvent = SplitEvent::try_from_val(&env, &topics.get(1).unwrap()).unwrap();
+    assert_eq!(topic0, symbol_short!("split"));
+    assert_eq!(topic1, SplitEvent::Calculated);
+
+    let data: i128 = i128::try_from_val(&env, &last_event.2).unwrap();
+    assert_eq!(data, total_amount);
 }

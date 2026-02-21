@@ -194,7 +194,7 @@ impl SavingsGoalContract {
             unlock_date: None,
         };
 
-        goals.set(next_id, goal);
+        goals.set(next_id, goal.clone());
         env.storage()
             .instance()
             .set(&symbol_short!("GOALS"), &goals);
@@ -205,7 +205,7 @@ impl SavingsGoalContract {
         // Emit GoalCreated event
         let event = GoalCreatedEvent {
             goal_id: next_id,
-            name: name.clone(),
+            name: goal.name.clone(),
             target_amount,
             target_date,
             timestamp: env.ledger().timestamp(),
@@ -264,7 +264,7 @@ impl SavingsGoalContract {
         // Access control: verify caller is the owner
         if goal.owner != caller {
             Self::append_audit(&env, symbol_short!("add"), &caller, false);
-            panic!("Only the goal owner can add funds");
+            panic!("Goal not found");
         }
 
         goal.current_amount = goal.current_amount.checked_add(amount).expect("overflow");

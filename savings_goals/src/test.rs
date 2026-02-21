@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use super::*;
 use soroban_sdk::{
     testutils::{Address as AddressTrait, Events, Ledger, LedgerInfo},

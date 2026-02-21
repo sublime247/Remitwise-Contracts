@@ -226,6 +226,16 @@ impl Insurance {
         // Update next payment date to 30 days from now
         policy.next_payment_date = env.ledger().timestamp() + (30 * 86400);
 
+        // Emit PremiumPaid event
+        let event = PremiumPaidEvent {
+            policy_id,
+            name: policy.name.clone(),
+            amount: policy.monthly_premium,
+            next_payment_date: policy.next_payment_date,
+            timestamp: env.ledger().timestamp(),
+        };
+        env.events().publish((PREMIUM_PAID,), event);
+
         policies.set(policy_id, policy);
         env.storage()
             .instance()
@@ -336,17 +346,25 @@ impl Insurance {
         }
 
         policy.active = false;
+
+        // Emit PolicyDeactivated event
+        let event = PolicyDeactivatedEvent {
+            policy_id,
+            name: policy.name.clone(),
+            timestamp: env.ledger().timestamp(),
+        };
+        env.events().publish((POLICY_DEACTIVATED,), event);
+
+        // Emit enum-based audit event
+        env.events().publish(
+            (symbol_short!("insuranc"), InsuranceEvent::PolicyDeactivated),
+            (policy_id, caller),
+        );
+
         policies.set(policy_id, policy);
         env.storage()
             .instance()
             .set(&symbol_short!("POLICIES"), &policies);
-
-        // Emit event for audit trail
-        env.events().publish(
-            (symbol_short!("insure"), InsuranceEvent::PolicyDeactivated),
-            (policy_id, caller),
-        );
-
         true
     }
 
@@ -665,6 +683,8 @@ mod test {
             &25000,
         );
 
+        env.mock_all_auths();
+
         // Get events before paying premium
         let events_before = env.events().all().len();
 
@@ -672,9 +692,9 @@ mod test {
         let result = client.pay_premium(&owner, &policy_id);
         assert!(result);
 
-        // Verify PremiumPaid event was emitted (1 new event)
+        // Verify PremiumPaid event was emitted (2 new events: topic + enum)
         let events_after = env.events().all().len();
-        assert_eq!(events_after - events_before, 1);
+        assert_eq!(events_after - events_before, 2);
     }
 
     #[test]
@@ -694,6 +714,8 @@ mod test {
             &100000,
         );
 
+        env.mock_all_auths();
+
         // Get events before deactivating
         let events_before = env.events().all().len();
 
@@ -701,9 +723,9 @@ mod test {
         let result = client.deactivate_policy(&owner, &policy_id);
         assert!(result);
 
-        // Verify PolicyDeactivated event was emitted (1 new event)
+        // Verify PolicyDeactivated event was emitted (2 new events: topic + enum)
         let events_after = env.events().all().len();
-        assert_eq!(events_after - events_before, 1);
+        assert_eq!(events_after - events_before, 2);
     }
 
     #[test]
@@ -759,14 +781,16 @@ mod test {
             &75000,
         );
 
+        env.mock_all_auths();
+
         // Pay premium
         client.pay_premium(&owner, &policy_id);
 
         // Deactivate
         client.deactivate_policy(&owner, &policy_id);
 
-        // Should have 4 events: 2 Created + 1 PremiumPaid + 1 Deactivated
+        // Should have 6 events: 2 Created + 2 PremiumPaid + 2 Deactivated
         let events = env.events().all();
-        assert_eq!(events.len(), 4);
+        assert_eq!(events.len(), 6);
     }
 }
