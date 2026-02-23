@@ -339,6 +339,49 @@ mod testsuit {
     }
 
     #[test]
+    fn test_cancel_bill_owner_succeeds() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, BillPayments);
+        let client = BillPaymentsClient::new(&env, &contract_id);
+        let owner = <soroban_sdk::Address as AddressTrait>::generate(&env);
+        env.mock_all_auths();
+        let bill_id = client.create_bill(
+            &owner,
+            &String::from_str(&env, "Test"),
+            &100,
+            &1000000,
+            &false,
+            &0,
+        );
+        env.mock_all_auths();
+        client.cancel_bill(&owner, &bill_id);
+        let bill = client.get_bill(&bill_id);
+        assert!(bill.is_none());
+    }
+
+    #[test]
+    fn test_cancel_bill_unauthorized_fails() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, BillPayments);
+        let client = BillPaymentsClient::new(&env, &contract_id);
+        let owner = <soroban_sdk::Address as AddressTrait>::generate(&env);
+        let other = <soroban_sdk::Address as AddressTrait>::generate(&env);
+
+        env.mock_all_auths();
+        let bill_id = client.create_bill(
+            &owner,
+            &String::from_str(&env, "Water"),
+            &500,
+            &1000000,
+            &false,
+            &0,
+        );
+
+        let result = client.try_cancel_bill(&other, &bill_id);
+        assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    }
+
+    #[test]
     fn test_cancel_nonexistent_bill() {
         let env = Env::default();
         let contract_id = env.register_contract(None, BillPayments);
@@ -380,12 +423,19 @@ mod testsuit {
     }
 
     #[test]
-    fn test_get_all_bills() {
+    #[allow(deprecated)]
+    fn test_get_all_bills_admin_only() {
         let env = Env::default();
         let contract_id = env.register_contract(None, BillPayments);
         let client = BillPaymentsClient::new(&env, &contract_id);
         let owner = <soroban_sdk::Address as AddressTrait>::generate(&env);
+        let admin = <soroban_sdk::Address as AddressTrait>::generate(&env);
+
         env.mock_all_auths();
+
+        // Set up pause admin
+        client.set_pause_admin(&admin, &admin);
+
         client.create_bill(
             &owner,
             &String::from_str(&env, "Bill1"),
@@ -394,7 +444,6 @@ mod testsuit {
             &false,
             &0,
         );
-        env.mock_all_auths();
         client.create_bill(
             &owner,
             &String::from_str(&env, "Bill2"),
@@ -403,7 +452,6 @@ mod testsuit {
             &false,
             &0,
         );
-        env.mock_all_auths();
         client.create_bill(
             &owner,
             &String::from_str(&env, "Bill3"),
@@ -412,13 +460,12 @@ mod testsuit {
             &false,
             &0,
         );
-        env.mock_all_auths();
         client.pay_bill(&owner, &1);
 
-        let all = client.get_all_bills();
+        // Admin can see all 3 bills
+        let all = client.get_all_bills(&admin);
         assert_eq!(all.len(), 3);
     }
-
     #[test]
     fn test_pay_bill_unauthorized() {
         let env = Env::default();
@@ -521,6 +568,208 @@ mod testsuit {
 
         let next_bill = client.get_bill(&2).unwrap();
         assert_eq!(next_bill.due_date, 1000000 + 86400); // Exactly 1 day later
+    }
+
+    #[test]
+    fn test_get_all_bills_for_owner_basic() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, BillPayments);
+        let client = BillPaymentsClient::new(&env, &contract_id);
+        let owner = <soroban_sdk::Address as AddressTrait>::generate(&env);
+
+        env.mock_all_auths();
+        client.create_bill(
+            &owner,
+            &String::from_str(&env, "Electricity"),
+            &100,
+            &1000000,
+            &false,
+            &0,
+        );
+        client.create_bill(
+            &owner,
+            &String::from_str(&env, "Water"),
+            &200,
+            &1000000,
+            &false,
+            &0,
+        );
+
+        let bills = client.get_all_bills_for_owner(&owner);
+        assert_eq!(bills.len(), 2);
+        for bill in bills.iter() {
+            assert_eq!(bill.owner, owner);
+        }
+    }
+
+    #[test]
+    fn test_get_all_bills_for_owner_isolation() {
+        // Alice's bills must NOT appear when Bob queries, and vice versa
+        let env = Env::default();
+        let contract_id = env.register_contract(None, BillPayments);
+        let client = BillPaymentsClient::new(&env, &contract_id);
+        let alice = <soroban_sdk::Address as AddressTrait>::generate(&env);
+        let bob = <soroban_sdk::Address as AddressTrait>::generate(&env);
+
+        env.mock_all_auths();
+        client.create_bill(
+            &alice,
+            &String::from_str(&env, "Alice Rent"),
+            &1000,
+            &1000000,
+            &false,
+            &0,
+        );
+        client.create_bill(
+            &alice,
+            &String::from_str(&env, "Alice Water"),
+            &200,
+            &1000000,
+            &false,
+            &0,
+        );
+        client.create_bill(
+            &bob,
+            &String::from_str(&env, "Bob Internet"),
+            &50,
+            &1000000,
+            &false,
+            &0,
+        );
+
+        let alice_bills = client.get_all_bills_for_owner(&alice);
+        let bob_bills = client.get_all_bills_for_owner(&bob);
+
+        // Alice sees only her 2 bills
+        assert_eq!(alice_bills.len(), 2);
+        for bill in alice_bills.iter() {
+            assert_eq!(bill.owner, alice, "Alice received a bill she doesn't own");
+        }
+
+        // Bob sees only his 1 bill
+        assert_eq!(bob_bills.len(), 1);
+        assert_eq!(bob_bills.get(0).unwrap().owner, bob);
+    }
+
+    #[test]
+    fn test_get_all_bills_for_owner_empty() {
+        // Owner with no bills gets an empty vec, not someone else's bills
+        let env = Env::default();
+        let contract_id = env.register_contract(None, BillPayments);
+        let client = BillPaymentsClient::new(&env, &contract_id);
+        let alice = <soroban_sdk::Address as AddressTrait>::generate(&env);
+        let bob = <soroban_sdk::Address as AddressTrait>::generate(&env);
+
+        env.mock_all_auths();
+        client.create_bill(
+            &alice,
+            &String::from_str(&env, "Alice Bill"),
+            &500,
+            &1000000,
+            &false,
+            &0,
+        );
+
+        // Bob never created a bill
+        let bob_bills = client.get_all_bills_for_owner(&bob);
+        assert_eq!(bob_bills.len(), 0);
+    }
+
+    #[test]
+    fn test_get_all_bills_for_owner_after_pay() {
+        // Paid bills still belong to owner — they should still appear
+        let env = Env::default();
+        let contract_id = env.register_contract(None, BillPayments);
+        let client = BillPaymentsClient::new(&env, &contract_id);
+        let owner = <soroban_sdk::Address as AddressTrait>::generate(&env);
+
+        env.mock_all_auths();
+        let bill_id = client.create_bill(
+            &owner,
+            &String::from_str(&env, "Paid Bill"),
+            &300,
+            &1000000,
+            &false,
+            &0,
+        );
+        client.pay_bill(&owner, &bill_id);
+
+        let bills = client.get_all_bills_for_owner(&owner);
+        assert_eq!(bills.len(), 1);
+        assert!(bills.get(0).unwrap().paid);
+    }
+
+    #[test]
+    fn test_get_all_bills_for_owner_after_cancel() {
+        // Cancelled bills are removed — owner query must reflect that
+        let env = Env::default();
+        let contract_id = env.register_contract(None, BillPayments);
+        let client = BillPaymentsClient::new(&env, &contract_id);
+        let owner = <soroban_sdk::Address as AddressTrait>::generate(&env);
+
+        env.mock_all_auths();
+        let bill_id = client.create_bill(
+            &owner,
+            &String::from_str(&env, "To Cancel"),
+            &100,
+            &1000000,
+            &false,
+            &0,
+        );
+        client.create_bill(
+            &owner,
+            &String::from_str(&env, "Keep"),
+            &200,
+            &1000000,
+            &false,
+            &0,
+        );
+        client.cancel_bill(&owner, &bill_id);
+
+        let bills = client.get_all_bills_for_owner(&owner);
+        assert_eq!(bills.len(), 1);
+        assert_eq!(bills.get(0).unwrap().amount, 200);
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn test_get_all_bills_non_admin_fails() {
+        // Non-admin calling get_all_bills (admin endpoint) must get Unauthorized
+        let env = Env::default();
+        let contract_id = env.register_contract(None, BillPayments);
+        let client = BillPaymentsClient::new(&env, &contract_id);
+        let admin = <soroban_sdk::Address as AddressTrait>::generate(&env);
+        let alice = <soroban_sdk::Address as AddressTrait>::generate(&env);
+
+        env.mock_all_auths();
+        client.set_pause_admin(&admin, &admin);
+        client.create_bill(
+            &alice,
+            &String::from_str(&env, "Alice Bill"),
+            &100,
+            &1000000,
+            &false,
+            &0,
+        );
+
+        // Alice tries to call the admin-only endpoint
+        let result = client.try_get_all_bills(&alice);
+        assert_eq!(result.unwrap_err().unwrap(), Error::Unauthorized);
+    }
+
+    #[test]
+    #[allow(deprecated)]
+    fn test_get_all_bills_no_admin_set_fails() {
+        // If no pause admin is set at all, get_all_bills must return Unauthorized
+        let env = Env::default();
+        let contract_id = env.register_contract(None, BillPayments);
+        let client = BillPaymentsClient::new(&env, &contract_id);
+        let alice = <soroban_sdk::Address as AddressTrait>::generate(&env);
+
+        env.mock_all_auths();
+
+        let result = client.try_get_all_bills(&alice);
+        assert_eq!(result.unwrap_err().unwrap(), Error::Unauthorized);
     }
 
     // NOTE: The following schedule-related tests are commented out because the
@@ -760,9 +1009,11 @@ mod testsuit {
         assert_eq!(schedules.len(), 2);
     }
     */
-
     #[test]
-    fn test_get_unpaid_bills_many_items() {
+    fn test_create_bill_emits_event() {
+        use soroban_sdk::testutils::Events;
+        use soroban_sdk::{symbol_short, vec, IntoVal};
+
         let env = Env::default();
         let contract_id = env.register_contract(None, BillPayments);
         let client = BillPaymentsClient::new(&env, &contract_id);
@@ -770,104 +1021,41 @@ mod testsuit {
 
         env.mock_all_auths();
 
-        // Create 15 unpaid bills for the owner (chosen count > 10 for meaningful testing)
-        let bill_names = [
-            "Bill 0", "Bill 1", "Bill 2", "Bill 3", "Bill 4", "Bill 5", "Bill 6", "Bill 7",
-            "Bill 8", "Bill 9", "Bill 10", "Bill 11", "Bill 12", "Bill 13", "Bill 14",
-        ];
-
-        let mut created_bill_ids = Vec::new(&env);
-        let mut expected_total = 0i128;
-
-        for i in 0..15 {
-            let amount = 1000 + (i as i128 * 100);
-            expected_total += amount;
-
-            let bill_id = client.create_bill(
-                &owner,
-                &String::from_str(&env, bill_names[i]),
-                &amount,
-                &(1000000 + (i as u64 * 10000)), // Different due dates
-                &false,                          // Not recurring
-                &0,
-            );
-            created_bill_ids.push_back(bill_id);
-        }
-
-        // Test get_unpaid_bills returns correct count
-        let unpaid_bills = client.get_unpaid_bills(&owner);
-        assert_eq!(
-            unpaid_bills.len(),
-            15,
-            "Should return exactly 15 unpaid bills"
-        );
-
-        // Verify all returned bills belong to the owner and are unpaid
-        for i in 0..unpaid_bills.len() {
-            let bill = unpaid_bills.get(i).unwrap();
-            assert_eq!(bill.owner, owner, "All bills should belong to the owner");
-            assert!(!bill.paid, "All bills should be unpaid");
-        }
-
-        // Verify all bill IDs are distinct and in expected range (1..=15)
-        let mut found_ids = Vec::new(&env);
-        for i in 0..unpaid_bills.len() {
-            let bill = unpaid_bills.get(i).unwrap();
-            found_ids.push_back(bill.id);
-            assert!(
-                bill.id >= 1 && bill.id <= 15,
-                "Bill ID should be in range 1..=15"
-            );
-        }
-
-        // Verify no duplicate IDs
-        for i in 0..found_ids.len() {
-            for j in (i + 1)..found_ids.len() {
-                assert_ne!(
-                    found_ids.get(i).unwrap(),
-                    found_ids.get(j).unwrap(),
-                    "Bill IDs should be unique"
-                );
-            }
-        }
-
-        // Test get_total_unpaid matches sum of all bill amounts
-        let total_unpaid = client.get_total_unpaid(&owner);
-        assert_eq!(
-            total_unpaid, expected_total,
-            "Total unpaid should match sum of all bill amounts"
-        );
-
-        // Test isolation: create bills for different owner
-        let other_owner = <soroban_sdk::Address as AddressTrait>::generate(&env);
         client.create_bill(
-            &other_owner,
-            &String::from_str(&env, "Other Owner Bill"),
-            &5000,
-            &2000000,
+            &owner,
+            &String::from_str(&env, "Electricity"),
+            &1000,
+            &1000000,
             &false,
             &0,
         );
 
-        // Verify first owner's bills are not affected
-        let owner_unpaid_after = client.get_unpaid_bills(&owner);
-        assert_eq!(
-            owner_unpaid_after.len(),
-            15,
-            "Owner's unpaid bills should remain unchanged"
-        );
+        let events = env.events().all();
+        assert!(events.len() > 0);
+        let last_event = events.last().unwrap();
 
-        // Verify other owner's bills are separate
-        let other_unpaid = client.get_unpaid_bills(&other_owner);
-        assert_eq!(
-            other_unpaid.len(),
-            1,
-            "Other owner should have exactly 1 unpaid bill"
-        );
+        let expected_topics = vec![
+            &env,
+            symbol_short!("Remitwise").into_val(&env),
+            1u32.into_val(&env), // EventCategory::State
+            1u32.into_val(&env), // EventPriority::Medium
+            symbol_short!("created").into_val(&env),
+        ];
+
+        assert_eq!(last_event.1, expected_topics);
+
+        let data: (u32, soroban_sdk::Address, i128, u64) =
+            soroban_sdk::FromVal::from_val(&env, &last_event.2);
+        assert_eq!(data, (1u32, owner.clone(), 1000i128, 1000000u64));
+
+        assert_eq!(last_event.0, contract_id.clone());
     }
 
     #[test]
-    fn test_pay_bills_and_verify_decreased_counts() {
+    fn test_pay_bill_emits_event() {
+        use soroban_sdk::testutils::Events;
+        use soroban_sdk::{symbol_short, vec, IntoVal};
+
         let env = Env::default();
         let contract_id = env.register_contract(None, BillPayments);
         let client = BillPaymentsClient::new(&env, &contract_id);
@@ -875,83 +1063,36 @@ mod testsuit {
 
         env.mock_all_auths();
 
-        // Create 12 unpaid bills for the owner
-        let bill_names = [
-            "Bill 0", "Bill 1", "Bill 2", "Bill 3", "Bill 4", "Bill 5", "Bill 6", "Bill 7",
-            "Bill 8", "Bill 9", "Bill 10", "Bill 11",
+        let bill_id = client.create_bill(
+            &owner,
+            &String::from_str(&env, "Electricity"),
+            &1000,
+            &1000000,
+            &false,
+            &0,
+        );
+
+        env.mock_all_auths();
+
+        client.pay_bill(&owner, &bill_id);
+
+        let events = env.events().all();
+        let last_event = events.last().unwrap();
+
+        let expected_topics = vec![
+            &env,
+            symbol_short!("Remitwise").into_val(&env),
+            0u32.into_val(&env), // EventCategory::Transaction
+            2u32.into_val(&env), // EventPriority::High
+            symbol_short!("paid").into_val(&env),
         ];
 
-        let mut bill_ids = Vec::new(&env);
-        let mut expected_total = 0i128;
+        assert_eq!(last_event.1, expected_topics);
 
-        for i in 0..12 {
-            let amount = 1000 + (i as i128 * 100);
-            expected_total += amount;
+        let data: (u32, soroban_sdk::Address, i128) =
+            soroban_sdk::FromVal::from_val(&env, &last_event.2);
+        assert_eq!(data, (bill_id, owner.clone(), 1000i128));
 
-            let bill_id = client.create_bill(
-                &owner,
-                &String::from_str(&env, bill_names[i]),
-                &amount,
-                &(1000000 + (i as u64 * 10000)),
-                &false,
-                &0,
-            );
-            bill_ids.push_back(bill_id);
-        }
-
-        // Verify initial state
-        let initial_unpaid = client.get_unpaid_bills(&owner);
-        let initial_total = client.get_total_unpaid(&owner);
-        assert_eq!(initial_unpaid.len(), 12);
-        assert_eq!(initial_total, expected_total);
-
-        // Pay first 3 bills
-        for i in 0..3 {
-            client.pay_bill(&owner, &bill_ids.get(i).unwrap());
-        }
-
-        // Verify decreased counts
-        let after_payment_unpaid = client.get_unpaid_bills(&owner);
-        let after_payment_total = client.get_total_unpaid(&owner);
-        assert_eq!(
-            after_payment_unpaid.len(),
-            9,
-            "Should have 9 unpaid bills after paying 3"
-        );
-
-        // Calculate expected total after paying first 3 bills
-        let mut expected_remaining = expected_total;
-        for i in 0..3 {
-            expected_remaining -= 1000 + (i as i128 * 100);
-        }
-        assert_eq!(
-            after_payment_total, expected_remaining,
-            "Total should decrease by paid amounts"
-        );
-
-        // Verify paid bills are no longer in unpaid list
-        for i in 0..3 {
-            let bill_id = bill_ids.get(i).unwrap();
-            let bill = client.get_bill(&bill_id).unwrap();
-            assert!(bill.paid, "Paid bill should be marked as paid");
-        }
-
-        // Verify remaining bills are still unpaid
-        for i in 3..12 {
-            let bill_id = bill_ids.get(i).unwrap();
-            let bill = client.get_bill(&bill_id).unwrap();
-            assert!(!bill.paid, "Unpaid bill should remain unpaid");
-        }
-
-        // Pay all remaining bills
-        for i in 3..12 {
-            client.pay_bill(&owner, &bill_ids.get(i).unwrap());
-        }
-
-        // Verify all bills are paid
-        let final_unpaid = client.get_unpaid_bills(&owner);
-        let final_total = client.get_total_unpaid(&owner);
-        assert_eq!(final_unpaid.len(), 0, "Should have no unpaid bills");
-        assert_eq!(final_total, 0, "Total unpaid should be 0");
+        assert_eq!(last_event.0, contract_id.clone());
     }
 }

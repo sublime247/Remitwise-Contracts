@@ -117,7 +117,8 @@ The pagination API is designed to minimize gas costs:
 
 */
 use soroban_sdk::{
-    contract, contractimpl, contracttype, symbol_short, Address, Env, Map, String, Symbol, Vec,
+    contract, contracterror, contractimpl, contracttype, symbol_short, Address, Env, Map, String,
+    Symbol, Vec,
 };
 
 // Event topics
@@ -157,6 +158,32 @@ pub struct GoalCompletedEvent {
 // Storage TTL constants
 const INSTANCE_LIFETIME_THRESHOLD: u32 = 17280; // ~1 day
 const INSTANCE_BUMP_AMOUNT: u32 = 518400; // ~30 days
+
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[repr(u32)]
+pub enum SavingsGoalError {
+    ContractPaused = 1,
+    FunctionPaused = 2,
+    Unauthorized = 3,
+    TimeLockedUnpauseNotReached = 4,
+    TargetAmountMustBePositive = 5,
+    AmountMustBePositive = 6,
+    GoalNotFound = 7,
+    BatchTooLarge = 8,
+    NotOwnerOfAllGoals = 9,
+    BatchValidationFailed = 10,
+    GoalLocked = 11,
+    TimeLocked = 12,
+    InsufficientBalance = 13,
+    UnsupportedSnapshotVersion = 14,
+    SnapshotChecksumMismatch = 15,
+    InvalidNonce = 16,
+    UnlockDateMustBeInFuture = 17,
+    NextDueDateMustBeInFuture = 18,
+    ScheduleNotFound = 19,
+    ArithmeticError = 20,
+}
 
 /// Savings goal data structure with owner tracking for access control
 #[contract]
@@ -301,53 +328,60 @@ impl SavingsGoalContract {
             .get(func)
             .unwrap_or(false)
     }
-    fn require_not_paused(env: &Env, func: Symbol) {
+    fn require_not_paused(env: &Env, func: Symbol) -> Result<(), SavingsGoalError> {
         if Self::get_global_paused(env) {
-            panic!("Contract is paused");
+            return Err(SavingsGoalError::ContractPaused);
         }
         if Self::is_function_paused(env, func) {
-            panic!("Function is paused");
+            return Err(SavingsGoalError::FunctionPaused);
         }
+        Ok(())
     }
 
-    pub fn set_pause_admin(env: Env, caller: Address, new_admin: Address) {
+    pub fn set_pause_admin(
+        env: Env,
+        caller: Address,
+        new_admin: Address,
+    ) -> Result<(), SavingsGoalError> {
         caller.require_auth();
         let current = Self::get_pause_admin(&env);
         match current {
             None => {
                 if caller != new_admin {
-                    panic!("Unauthorized");
+                    return Err(SavingsGoalError::Unauthorized);
                 }
             }
-            Some(admin) if admin != caller => panic!("Unauthorized"),
+            Some(admin) if admin != caller => return Err(SavingsGoalError::Unauthorized),
             _ => {}
         }
         env.storage()
             .instance()
             .set(&symbol_short!("PAUSE_ADM"), &new_admin);
+        Ok(())
     }
-    pub fn pause(env: Env, caller: Address) {
+    pub fn pause(env: Env, caller: Address) -> Result<(), SavingsGoalError> {
         caller.require_auth();
-        let admin = Self::get_pause_admin(&env).expect("No pause admin set");
+        let admin = Self::get_pause_admin(&env).ok_or(SavingsGoalError::Unauthorized)?;
         if admin != caller {
-            panic!("Unauthorized");
+            return Err(SavingsGoalError::Unauthorized);
         }
         env.storage()
             .instance()
             .set(&symbol_short!("PAUSED"), &true);
         env.events()
             .publish((symbol_short!("savings"), symbol_short!("paused")), ());
+        Ok(())
     }
-    pub fn unpause(env: Env, caller: Address) {
+    pub fn unpause(env: Env, caller: Address) -> Result<(), SavingsGoalError> {
         caller.require_auth();
-        let admin = Self::get_pause_admin(&env).expect("No pause admin set");
+        let admin = Self::get_pause_admin(&env).ok_or(SavingsGoalError::Unauthorized)?;
         if admin != caller {
-            panic!("Unauthorized");
+            return Err(SavingsGoalError::Unauthorized);
         }
         let unpause_at: Option<u64> = env.storage().instance().get(&symbol_short!("UNP_AT"));
         if let Some(at) = unpause_at {
             if env.ledger().timestamp() < at {
-                panic!("Time-locked unpause not yet reached");
+                return Err(SavingsGoalError::TimeLockedUnpauseNotReached);
             }
             env.storage().instance().remove(&symbol_short!("UNP_AT"));
         }
@@ -356,12 +390,13 @@ impl SavingsGoalContract {
             .set(&symbol_short!("PAUSED"), &false);
         env.events()
             .publish((symbol_short!("savings"), symbol_short!("unpaused")), ());
+        Ok(())
     }
-    pub fn pause_function(env: Env, caller: Address, func: Symbol) {
+    pub fn pause_function(env: Env, caller: Address, func: Symbol) -> Result<(), SavingsGoalError> {
         caller.require_auth();
-        let admin = Self::get_pause_admin(&env).expect("No pause admin set");
+        let admin = Self::get_pause_admin(&env).ok_or(SavingsGoalError::Unauthorized)?;
         if admin != caller {
-            panic!("Unauthorized");
+            return Err(SavingsGoalError::Unauthorized);
         }
         let mut m: Map<Symbol, bool> = env
             .storage()
@@ -372,12 +407,17 @@ impl SavingsGoalContract {
         env.storage()
             .instance()
             .set(&symbol_short!("PAUSED_FN"), &m);
+        Ok(())
     }
-    pub fn unpause_function(env: Env, caller: Address, func: Symbol) {
+    pub fn unpause_function(
+        env: Env,
+        caller: Address,
+        func: Symbol,
+    ) -> Result<(), SavingsGoalError> {
         caller.require_auth();
-        let admin = Self::get_pause_admin(&env).expect("No pause admin set");
+        let admin = Self::get_pause_admin(&env).ok_or(SavingsGoalError::Unauthorized)?;
         if admin != caller {
-            panic!("Unauthorized");
+            return Err(SavingsGoalError::Unauthorized);
         }
         let mut m: Map<Symbol, bool> = env
             .storage()
@@ -388,6 +428,7 @@ impl SavingsGoalContract {
         env.storage()
             .instance()
             .set(&symbol_short!("PAUSED_FN"), &m);
+        Ok(())
     }
     pub fn is_paused(env: Env) -> bool {
         Self::get_global_paused(&env)
@@ -401,27 +442,36 @@ impl SavingsGoalContract {
     fn get_upgrade_admin(env: &Env) -> Option<Address> {
         env.storage().instance().get(&symbol_short!("UPG_ADM"))
     }
-    pub fn set_upgrade_admin(env: Env, caller: Address, new_admin: Address) {
+    pub fn set_upgrade_admin(
+        env: Env,
+        caller: Address,
+        new_admin: Address,
+    ) -> Result<(), SavingsGoalError> {
         caller.require_auth();
         let current = Self::get_upgrade_admin(&env);
         match current {
             None => {
                 if caller != new_admin {
-                    panic!("Unauthorized");
+                    return Err(SavingsGoalError::Unauthorized);
                 }
             }
-            Some(adm) if adm != caller => panic!("Unauthorized"),
+            Some(adm) if adm != caller => return Err(SavingsGoalError::Unauthorized),
             _ => {}
         }
         env.storage()
             .instance()
             .set(&symbol_short!("UPG_ADM"), &new_admin);
+        Ok(())
     }
-    pub fn set_version(env: Env, caller: Address, new_version: u32) {
+    pub fn set_version(
+        env: Env,
+        caller: Address,
+        new_version: u32,
+    ) -> Result<(), SavingsGoalError> {
         caller.require_auth();
-        let admin = Self::get_upgrade_admin(&env).expect("No upgrade admin set");
+        let admin = Self::get_upgrade_admin(&env).ok_or(SavingsGoalError::Unauthorized)?;
         if admin != caller {
-            panic!("Unauthorized");
+            return Err(SavingsGoalError::Unauthorized);
         }
         let prev = Self::get_version(env.clone());
         env.storage()
@@ -431,6 +481,7 @@ impl SavingsGoalContract {
             (symbol_short!("savings"), symbol_short!("upgraded")),
             (prev, new_version),
         );
+        Ok(())
     }
 
     /// Create a new savings goal
@@ -453,15 +504,15 @@ impl SavingsGoalContract {
         name: String,
         target_amount: i128,
         target_date: u64,
-    ) -> u32 {
+    ) -> Result<u32, SavingsGoalError> {
         // Access control: require owner authorization
         owner.require_auth();
-        Self::require_not_paused(&env, pause_functions::CREATE_GOAL);
+        Self::require_not_paused(&env, pause_functions::CREATE_GOAL)?;
 
         // Input validation
         if target_amount <= 0 {
             Self::append_audit(&env, symbol_short!("create"), &owner, false);
-            panic!("Target amount must be positive");
+            return Err(SavingsGoalError::TargetAmountMustBePositive);
         }
 
         // Extend storage TTL
@@ -514,7 +565,7 @@ impl SavingsGoalContract {
             (next_id, owner),
         );
 
-        next_id
+        Ok(next_id)
     }
 
     /// Add funds to a savings goal
@@ -531,15 +582,20 @@ impl SavingsGoalContract {
     /// - If caller is not the goal owner
     /// - If goal is not found
     /// - If amount is not positive
-    pub fn add_to_goal(env: Env, caller: Address, goal_id: u32, amount: i128) -> i128 {
+    pub fn add_to_goal(
+        env: Env,
+        caller: Address,
+        goal_id: u32,
+        amount: i128,
+    ) -> Result<i128, SavingsGoalError> {
         // Access control: require caller authorization
         caller.require_auth();
-        Self::require_not_paused(&env, pause_functions::ADD_TO_GOAL);
+        Self::require_not_paused(&env, pause_functions::ADD_TO_GOAL)?;
 
         // Input validation
         if amount <= 0 {
             Self::append_audit(&env, symbol_short!("add"), &caller, false);
-            panic!("Amount must be positive");
+            return Err(SavingsGoalError::AmountMustBePositive);
         }
 
         // Extend storage TTL
@@ -555,17 +611,20 @@ impl SavingsGoalContract {
             Some(g) => g,
             None => {
                 Self::append_audit(&env, symbol_short!("add"), &caller, false);
-                panic!("Goal not found");
+                return Err(SavingsGoalError::GoalNotFound);
             }
         };
 
         // Access control: verify caller is the owner
         if goal.owner != caller {
             Self::append_audit(&env, symbol_short!("add"), &caller, false);
-            panic!("Goal not found");
+            return Err(SavingsGoalError::GoalNotFound);
         }
 
-        goal.current_amount = goal.current_amount.checked_add(amount).expect("overflow");
+        goal.current_amount = goal
+            .current_amount
+            .checked_add(amount)
+            .ok_or(SavingsGoalError::ArithmeticError)?;
         let new_total = goal.current_amount;
         let was_completed = new_total >= goal.target_amount;
         let previously_completed = (new_total - amount) >= goal.target_amount;
@@ -609,7 +668,7 @@ impl SavingsGoalContract {
             );
         }
 
-        new_total
+        Ok(new_total)
     }
 
     /// Batch add to multiple goals (atomic). Caller must be owner of all goals.
@@ -617,11 +676,11 @@ impl SavingsGoalContract {
         env: Env,
         caller: Address,
         contributions: Vec<ContributionItem>,
-    ) -> u32 {
+    ) -> Result<u32, SavingsGoalError> {
         caller.require_auth();
-        Self::require_not_paused(&env, pause_functions::ADD_TO_GOAL);
+        Self::require_not_paused(&env, pause_functions::ADD_TO_GOAL)?;
         if contributions.len() as u32 > MAX_BATCH_SIZE {
-            panic!("Batch too large");
+            return Err(SavingsGoalError::BatchTooLarge);
         }
         let goals_map: Map<u32, SavingsGoal> = env
             .storage()
@@ -630,11 +689,13 @@ impl SavingsGoalContract {
             .unwrap_or_else(|| Map::new(&env));
         for item in contributions.iter() {
             if item.amount <= 0 {
-                panic!("Amount must be positive");
+                return Err(SavingsGoalError::AmountMustBePositive);
             }
-            let goal = goals_map.get(item.goal_id).expect("Goal not found");
+            let goal = goals_map
+                .get(item.goal_id)
+                .ok_or(SavingsGoalError::GoalNotFound)?;
             if goal.owner != caller {
-                panic!("Not owner of all goals");
+                return Err(SavingsGoalError::NotOwnerOfAllGoals);
             }
         }
         Self::extend_instance_ttl(&env);
@@ -645,14 +706,16 @@ impl SavingsGoalContract {
             .unwrap_or_else(|| Map::new(&env));
         let mut count = 0u32;
         for item in contributions.iter() {
-            let mut goal = goals.get(item.goal_id).expect("Goal not found");
+            let mut goal = goals
+                .get(item.goal_id)
+                .ok_or(SavingsGoalError::GoalNotFound)?;
             if goal.owner != caller {
-                panic!("Batch validation failed");
+                return Err(SavingsGoalError::BatchValidationFailed);
             }
             goal.current_amount = goal
                 .current_amount
                 .checked_add(item.amount)
-                .expect("overflow");
+                .ok_or(SavingsGoalError::ArithmeticError)?;
             let new_total = goal.current_amount;
             let was_completed = new_total >= goal.target_amount;
             let previously_completed = (new_total - item.amount) >= goal.target_amount;
@@ -692,7 +755,7 @@ impl SavingsGoalContract {
             (symbol_short!("savings"), symbol_short!("batch_add")),
             (count, caller),
         );
-        count
+        Ok(count)
     }
 
     /// Withdraw funds from a savings goal
@@ -712,15 +775,20 @@ impl SavingsGoalContract {
     /// - If unlock_date is set and not yet reached
     /// - If amount is not positive
     /// - If amount exceeds current balance
-    pub fn withdraw_from_goal(env: Env, caller: Address, goal_id: u32, amount: i128) -> i128 {
+    pub fn withdraw_from_goal(
+        env: Env,
+        caller: Address,
+        goal_id: u32,
+        amount: i128,
+    ) -> Result<i128, SavingsGoalError> {
         // Access control: require caller authorization
         caller.require_auth();
-        Self::require_not_paused(&env, pause_functions::WITHDRAW);
+        Self::require_not_paused(&env, pause_functions::WITHDRAW)?;
 
         // Input validation
         if amount <= 0 {
             Self::append_audit(&env, symbol_short!("withdraw"), &caller, false);
-            panic!("Amount must be positive");
+            return Err(SavingsGoalError::AmountMustBePositive);
         }
 
         // Extend storage TTL
@@ -736,20 +804,20 @@ impl SavingsGoalContract {
             Some(g) => g,
             None => {
                 Self::append_audit(&env, symbol_short!("withdraw"), &caller, false);
-                panic!("Goal not found");
+                return Err(SavingsGoalError::GoalNotFound);
             }
         };
 
         // Access control: verify caller is the owner
         if goal.owner != caller {
             Self::append_audit(&env, symbol_short!("withdraw"), &caller, false);
-            panic!("Only the goal owner can withdraw funds");
+            return Err(SavingsGoalError::Unauthorized);
         }
 
         // Check if goal is locked
         if goal.locked {
             Self::append_audit(&env, symbol_short!("withdraw"), &caller, false);
-            panic!("Cannot withdraw from a locked goal");
+            return Err(SavingsGoalError::GoalLocked);
         }
 
         // Check time-lock
@@ -757,17 +825,20 @@ impl SavingsGoalContract {
             let current_time = env.ledger().timestamp();
             if current_time < unlock_date {
                 Self::append_audit(&env, symbol_short!("withdraw"), &caller, false);
-                panic!("Goal is time-locked until unlock date");
+                return Err(SavingsGoalError::TimeLocked);
             }
         }
 
-        // Check sufficient balance
+        // Check sufficient balance // NOTE: added check for target vs Amount is not needed
         if amount > goal.current_amount {
             Self::append_audit(&env, symbol_short!("withdraw"), &caller, false);
-            panic!("Insufficient balance");
+            return Err(SavingsGoalError::InsufficientBalance);
         }
 
-        goal.current_amount = goal.current_amount.checked_sub(amount).expect("underflow");
+        goal.current_amount = goal
+            .current_amount
+            .checked_sub(amount)
+            .ok_or(SavingsGoalError::ArithmeticError)?;
         let new_amount = goal.current_amount;
 
         goals.set(goal_id, goal);
@@ -781,7 +852,7 @@ impl SavingsGoalContract {
             (goal_id, caller, amount),
         );
 
-        new_amount
+        Ok(new_amount)
     }
 
     /// Lock a savings goal (prevent withdrawals)
@@ -793,9 +864,9 @@ impl SavingsGoalContract {
     /// # Panics
     /// - If caller is not the goal owner
     /// - If goal is not found
-    pub fn lock_goal(env: Env, caller: Address, goal_id: u32) -> bool {
+    pub fn lock_goal(env: Env, caller: Address, goal_id: u32) -> Result<bool, SavingsGoalError> {
         caller.require_auth();
-        Self::require_not_paused(&env, pause_functions::LOCK);
+        Self::require_not_paused(&env, pause_functions::LOCK)?;
         Self::extend_instance_ttl(&env);
 
         let mut goals: Map<u32, SavingsGoal> = env
@@ -808,13 +879,13 @@ impl SavingsGoalContract {
             Some(g) => g,
             None => {
                 Self::append_audit(&env, symbol_short!("lock"), &caller, false);
-                panic!("Goal not found");
+                return Err(SavingsGoalError::GoalNotFound);
             }
         };
 
         if goal.owner != caller {
             Self::append_audit(&env, symbol_short!("lock"), &caller, false);
-            panic!("Only the goal owner can lock this goal");
+            return Err(SavingsGoalError::Unauthorized);
         }
 
         goal.locked = true;
@@ -829,7 +900,7 @@ impl SavingsGoalContract {
             (goal_id, caller),
         );
 
-        true
+        Ok(true)
     }
 
     /// Unlock a savings goal (allow withdrawals)
@@ -841,9 +912,9 @@ impl SavingsGoalContract {
     /// # Panics
     /// - If caller is not the goal owner
     /// - If goal is not found
-    pub fn unlock_goal(env: Env, caller: Address, goal_id: u32) -> bool {
+    pub fn unlock_goal(env: Env, caller: Address, goal_id: u32) -> Result<bool, SavingsGoalError> {
         caller.require_auth();
-        Self::require_not_paused(&env, pause_functions::UNLOCK);
+        Self::require_not_paused(&env, pause_functions::UNLOCK)?;
         Self::extend_instance_ttl(&env);
 
         let mut goals: Map<u32, SavingsGoal> = env
@@ -856,13 +927,13 @@ impl SavingsGoalContract {
             Some(g) => g,
             None => {
                 Self::append_audit(&env, symbol_short!("unlock"), &caller, false);
-                panic!("Goal not found");
+                return Err(SavingsGoalError::GoalNotFound);
             }
         };
 
         if goal.owner != caller {
             Self::append_audit(&env, symbol_short!("unlock"), &caller, false);
-            panic!("Only the goal owner can unlock this goal");
+            return Err(SavingsGoalError::Unauthorized);
         }
 
         goal.locked = false;
@@ -877,7 +948,7 @@ impl SavingsGoalContract {
             (goal_id, caller),
         );
 
-        true
+        Ok(true)
     }
 
     /// Get a savings goal by ID
@@ -1049,19 +1120,19 @@ impl SavingsGoalContract {
         caller: Address,
         nonce: u64,
         snapshot: GoalsExportSnapshot,
-    ) -> bool {
+    ) -> Result<bool, SavingsGoalError> {
         caller.require_auth();
-        Self::require_nonce(&env, &caller, nonce);
+        Self::require_nonce(&env, &caller, nonce)?;
 
         if snapshot.version != SNAPSHOT_VERSION {
             Self::append_audit(&env, symbol_short!("import"), &caller, false);
-            panic!("Unsupported snapshot version");
+            return Err(SavingsGoalError::UnsupportedSnapshotVersion);
         }
         let expected =
             Self::compute_goals_checksum(snapshot.version, snapshot.next_id, &snapshot.goals);
         if snapshot.checksum != expected {
             Self::append_audit(&env, symbol_short!("import"), &caller, false);
-            panic!("Snapshot checksum mismatch");
+            return Err(SavingsGoalError::SnapshotChecksumMismatch);
         }
 
         Self::extend_instance_ttl(&env);
@@ -1078,7 +1149,7 @@ impl SavingsGoalContract {
 
         Self::increment_nonce(&env, &caller);
         Self::append_audit(&env, symbol_short!("import"), &caller, true);
-        true
+        Ok(true)
     }
 
     /// Return recent audit log entries.
@@ -1100,11 +1171,12 @@ impl SavingsGoalContract {
         out
     }
 
-    fn require_nonce(env: &Env, address: &Address, expected: u64) {
+    fn require_nonce(env: &Env, address: &Address, expected: u64) -> Result<(), SavingsGoalError> {
         let current = Self::get_nonce(env.clone(), address.clone());
         if expected != current {
-            panic!("Invalid nonce: expected {}, got {}", current, expected);
+            return Err(SavingsGoalError::InvalidNonce);
         }
+        Ok(())
     }
 
     fn increment_nonce(env: &Env, address: &Address) {
@@ -1167,7 +1239,12 @@ impl SavingsGoalContract {
     }
 
     /// Set time-lock on a goal
-    pub fn set_time_lock(env: Env, caller: Address, goal_id: u32, unlock_date: u64) -> bool {
+    pub fn set_time_lock(
+        env: Env,
+        caller: Address,
+        goal_id: u32,
+        unlock_date: u64,
+    ) -> Result<bool, SavingsGoalError> {
         caller.require_auth();
         Self::extend_instance_ttl(&env);
 
@@ -1181,19 +1258,19 @@ impl SavingsGoalContract {
             Some(g) => g,
             None => {
                 Self::append_audit(&env, symbol_short!("timelock"), &caller, false);
-                panic!("Goal not found");
+                return Err(SavingsGoalError::GoalNotFound);
             }
         };
 
         if goal.owner != caller {
             Self::append_audit(&env, symbol_short!("timelock"), &caller, false);
-            panic!("Only the goal owner can set time-lock");
+            return Err(SavingsGoalError::Unauthorized);
         }
 
         let current_time = env.ledger().timestamp();
         if unlock_date <= current_time {
             Self::append_audit(&env, symbol_short!("timelock"), &caller, false);
-            panic!("Unlock date must be in the future");
+            return Err(SavingsGoalError::UnlockDateMustBeInFuture);
         }
 
         goal.unlock_date = Some(unlock_date);
@@ -1203,7 +1280,7 @@ impl SavingsGoalContract {
             .set(&symbol_short!("GOALS"), &goals);
 
         Self::append_audit(&env, symbol_short!("timelock"), &caller, true);
-        true
+        Ok(true)
     }
 
     /// Create a schedule for automatic savings deposits
@@ -1214,11 +1291,11 @@ impl SavingsGoalContract {
         amount: i128,
         next_due: u64,
         interval: u64,
-    ) -> u32 {
+    ) -> Result<u32, SavingsGoalError> {
         owner.require_auth();
 
         if amount <= 0 {
-            panic!("Amount must be positive");
+            return Err(SavingsGoalError::AmountMustBePositive);
         }
 
         let goals: Map<u32, SavingsGoal> = env
@@ -1227,15 +1304,15 @@ impl SavingsGoalContract {
             .get(&symbol_short!("GOALS"))
             .unwrap_or_else(|| Map::new(&env));
 
-        let goal = goals.get(goal_id).expect("Goal not found");
+        let goal = goals.get(goal_id).ok_or(SavingsGoalError::GoalNotFound)?;
 
         if goal.owner != owner {
-            panic!("Only the goal owner can create schedules");
+            return Err(SavingsGoalError::Unauthorized);
         }
 
         let current_time = env.ledger().timestamp();
         if next_due <= current_time {
-            panic!("Next due date must be in the future");
+            return Err(SavingsGoalError::NextDueDateMustBeInFuture);
         }
 
         Self::extend_instance_ttl(&env);
@@ -1280,7 +1357,7 @@ impl SavingsGoalContract {
             (next_schedule_id, owner),
         );
 
-        next_schedule_id
+        Ok(next_schedule_id)
     }
 
     /// Modify a savings schedule
@@ -1291,16 +1368,16 @@ impl SavingsGoalContract {
         amount: i128,
         next_due: u64,
         interval: u64,
-    ) -> bool {
+    ) -> Result<bool, SavingsGoalError> {
         caller.require_auth();
 
         if amount <= 0 {
-            panic!("Amount must be positive");
+            return Err(SavingsGoalError::AmountMustBePositive);
         }
 
         let current_time = env.ledger().timestamp();
         if next_due <= current_time {
-            panic!("Next due date must be in the future");
+            return Err(SavingsGoalError::NextDueDateMustBeInFuture);
         }
 
         Self::extend_instance_ttl(&env);
@@ -1311,10 +1388,12 @@ impl SavingsGoalContract {
             .get(&symbol_short!("SAV_SCH"))
             .unwrap_or_else(|| Map::new(&env));
 
-        let mut schedule = schedules.get(schedule_id).expect("Schedule not found");
+        let mut schedule = schedules
+            .get(schedule_id)
+            .ok_or(SavingsGoalError::ScheduleNotFound)?;
 
         if schedule.owner != caller {
-            panic!("Only the schedule owner can modify it");
+            return Err(SavingsGoalError::Unauthorized);
         }
 
         schedule.amount = amount;
@@ -1332,11 +1411,15 @@ impl SavingsGoalContract {
             (schedule_id, caller),
         );
 
-        true
+        Ok(true)
     }
 
     /// Cancel a savings schedule
-    pub fn cancel_savings_schedule(env: Env, caller: Address, schedule_id: u32) -> bool {
+    pub fn cancel_savings_schedule(
+        env: Env,
+        caller: Address,
+        schedule_id: u32,
+    ) -> Result<bool, SavingsGoalError> {
         caller.require_auth();
 
         Self::extend_instance_ttl(&env);
@@ -1347,10 +1430,12 @@ impl SavingsGoalContract {
             .get(&symbol_short!("SAV_SCH"))
             .unwrap_or_else(|| Map::new(&env));
 
-        let mut schedule = schedules.get(schedule_id).expect("Schedule not found");
+        let mut schedule = schedules
+            .get(schedule_id)
+            .ok_or(SavingsGoalError::ScheduleNotFound)?;
 
         if schedule.owner != caller {
-            panic!("Only the schedule owner can cancel it");
+            return Err(SavingsGoalError::Unauthorized);
         }
 
         schedule.active = false;
@@ -1365,11 +1450,11 @@ impl SavingsGoalContract {
             (schedule_id, caller),
         );
 
-        true
+        Ok(true)
     }
 
     /// Execute due savings schedules (public, callable by anyone - keeper pattern)
-    pub fn execute_due_savings_schedules(env: Env) -> Vec<u32> {
+    pub fn execute_due_savings_schedules(env: Env) -> Result<Vec<u32>, SavingsGoalError> {
         Self::extend_instance_ttl(&env);
 
         let current_time = env.ledger().timestamp();
@@ -1396,7 +1481,7 @@ impl SavingsGoalContract {
                 goal.current_amount = goal
                     .current_amount
                     .checked_add(schedule.amount)
-                    .expect("overflow");
+                    .ok_or(SavingsGoalError::ArithmeticError)?;
 
                 let is_completed = goal.current_amount >= goal.target_amount;
                 goals.set(schedule.goal_id, goal.clone());
@@ -1452,7 +1537,7 @@ impl SavingsGoalContract {
             .instance()
             .set(&symbol_short!("GOALS"), &goals);
 
-        executed
+        Ok(executed)
     }
 
     /// Get all savings schedules for an owner
