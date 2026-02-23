@@ -1202,3 +1202,53 @@ fn test_get_all_goals_many_items() {
         "Other owner should have exactly 1 goal"
     );
 }
+
+#[test]
+fn test_new_goal_locked_state() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, SavingsGoalContract);
+    let client = SavingsGoalContractClient::new(&env, &contract_id);
+    let owner = Address::generate(&env);
+
+    client.init();
+    env.mock_all_auths();
+
+    // Create a new goal
+    let goal_id = client.create_goal(
+        &owner,
+        &String::from_str(&env, "Test Locked Goal"),
+        &1000,
+        &1735689600,
+    );
+
+    // Test: Goal should be locked immediately after creation
+    let goal = client.get_goal(&goal_id).unwrap();
+    assert!(goal.locked, "New goal should be locked by default");
+
+    // Add funds to make balance sufficient for withdrawal
+    client.add_to_goal(&owner, &goal_id, &500);
+
+    // Test: Withdraw should fail when goal is still locked
+    let result = client.try_withdraw_from_goal(&owner, &goal_id, &200);
+    assert!(result.is_err(), "Withdraw from locked goal should fail");
+
+    // Test: Unlock the goal
+    client.unlock_goal(&owner, &goal_id);
+
+    // Verify goal is now unlocked
+    let unlocked_goal = client.get_goal(&goal_id).unwrap();
+    assert!(
+        !unlocked_goal.locked,
+        "Goal should be unlocked after unlock_goal call"
+    );
+
+    // Test: Withdraw should now succeed
+    client.withdraw_from_goal(&owner, &goal_id, &200);
+
+    // Verify balance decreased
+    let final_goal = client.get_goal(&goal_id).unwrap();
+    assert_eq!(
+        final_goal.current_amount, 300,
+        "Balance should be 500 - 200 = 300"
+    );
+}
