@@ -1,10 +1,10 @@
 use super::*;
+use soroban_sdk::testutils::storage::Instance as _;
 use soroban_sdk::{
     testutils::{Address as _, Ledger, LedgerInfo},
     token::{StellarAssetClient, TokenClient},
     vec, Env,
 };
-use soroban_sdk::testutils::storage::Instance as _;
 
 #[test]
 fn test_init_family_wallet() {
@@ -927,9 +927,7 @@ fn test_instance_ttl_extended_on_init() {
     assert!(result);
 
     // Inspect instance TTL — must be at least INSTANCE_BUMP_AMOUNT (518,400)
-    let ttl = env.as_contract(&contract_id, || {
-        env.storage().instance().get_ttl()
-    });
+    let ttl = env.as_contract(&contract_id, || env.storage().instance().get_ttl());
     assert!(
         ttl >= 518_400,
         "Instance TTL ({}) must be >= INSTANCE_BUMP_AMOUNT (518,400) after init",
@@ -984,9 +982,7 @@ fn test_instance_ttl_refreshed_on_add_member() {
     client.add_family_member(&owner, &member2, &FamilyRole::Member);
 
     // TTL should be refreshed relative to the new sequence number
-    let ttl = env.as_contract(&contract_id, || {
-        env.storage().instance().get_ttl()
-    });
+    let ttl = env.as_contract(&contract_id, || env.storage().instance().get_ttl());
     assert!(
         ttl >= 518_400,
         "Instance TTL ({}) must be >= 518,400 after add_family_member",
@@ -1065,7 +1061,10 @@ fn test_data_persists_across_repeated_operations() {
 
     // All data should still be accessible
     let owner_data = client.get_family_member(&owner);
-    assert!(owner_data.is_some(), "Owner data must persist across ledger advancements");
+    assert!(
+        owner_data.is_some(),
+        "Owner data must persist across ledger advancements"
+    );
 
     let m1_data = client.get_family_member(&member1);
     assert!(m1_data.is_some(), "Member1 data must persist");
@@ -1077,9 +1076,7 @@ fn test_data_persists_across_repeated_operations() {
     assert!(config.is_some(), "Multisig config must persist");
 
     // TTL should be fully refreshed
-    let ttl = env.as_contract(&contract_id, || {
-        env.storage().instance().get_ttl()
-    });
+    let ttl = env.as_contract(&contract_id, || env.storage().instance().get_ttl());
     assert!(
         ttl >= 518_400,
         "Instance TTL ({}) must remain >= 518,400 after repeated operations",
@@ -1131,9 +1128,7 @@ fn test_archive_ttl_extended_on_archive_transactions() {
     let archived = client.archive_old_transactions(&owner, &2_000_000);
 
     // TTL should be extended
-    let ttl = env.as_contract(&contract_id, || {
-        env.storage().instance().get_ttl()
-    });
+    let ttl = env.as_contract(&contract_id, || env.storage().instance().get_ttl());
     assert!(
         ttl >= 518_400,
         "Instance TTL ({}) must be >= INSTANCE_BUMP_AMOUNT (518,400) after archiving",

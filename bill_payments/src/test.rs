@@ -1,8 +1,8 @@
 #[cfg(test)]
 mod testsuit {
     use crate::*;
-    use soroban_sdk::testutils::{Address as AddressTrait, Ledger, LedgerInfo};
     use soroban_sdk::testutils::storage::Instance as _;
+    use soroban_sdk::testutils::{Address as AddressTrait, Ledger, LedgerInfo};
     use soroban_sdk::Env;
 
     fn set_time(env: &Env, timestamp: u64) {
@@ -1064,9 +1064,7 @@ mod testsuit {
         assert_eq!(bill_id, 1);
 
         // Inspect instance TTL — must be at least INSTANCE_BUMP_AMOUNT (518,400)
-        let ttl = env.as_contract(&contract_id, || {
-            env.storage().instance().get_ttl()
-        });
+        let ttl = env.as_contract(&contract_id, || env.storage().instance().get_ttl());
         assert!(
             ttl >= 518_400,
             "Instance TTL ({}) must be >= INSTANCE_BUMP_AMOUNT (518,400) after create_bill",
@@ -1126,9 +1124,7 @@ mod testsuit {
         client.pay_bill(&owner, &1);
 
         // TTL should be refreshed relative to the new sequence number
-        let ttl = env.as_contract(&contract_id, || {
-            env.storage().instance().get_ttl()
-        });
+        let ttl = env.as_contract(&contract_id, || env.storage().instance().get_ttl());
         assert!(
             ttl >= 518_400,
             "Instance TTL ({}) must be >= 518,400 after pay_bill refreshes it",
@@ -1212,17 +1208,21 @@ mod testsuit {
 
         // Both bills should still be accessible
         let bill1 = client.get_bill(&id1);
-        assert!(bill1.is_some(), "First bill must persist across ledger advancements");
+        assert!(
+            bill1.is_some(),
+            "First bill must persist across ledger advancements"
+        );
         assert_eq!(bill1.unwrap().amount, 2000);
 
         let bill2 = client.get_bill(&id2);
-        assert!(bill2.is_some(), "Second bill must persist across ledger advancements");
+        assert!(
+            bill2.is_some(),
+            "Second bill must persist across ledger advancements"
+        );
         assert!(bill2.unwrap().paid, "Second bill should be marked paid");
 
         // TTL should be fully refreshed
-        let ttl = env.as_contract(&contract_id, || {
-            env.storage().instance().get_ttl()
-        });
+        let ttl = env.as_contract(&contract_id, || env.storage().instance().get_ttl());
         assert!(
             ttl >= 518_400,
             "Instance TTL ({}) must remain >= 518,400 after repeated operations",
@@ -1287,9 +1287,7 @@ mod testsuit {
         let archived = client.archive_paid_bills(&owner, &600_000);
         assert_eq!(archived, 1);
 
-        let ttl = env.as_contract(&contract_id, || {
-            env.storage().instance().get_ttl()
-        });
+        let ttl = env.as_contract(&contract_id, || env.storage().instance().get_ttl());
         assert!(
             ttl >= 518_400,
             "Instance TTL ({}) must be >= INSTANCE_BUMP_AMOUNT (518,400) after archiving",
@@ -1358,9 +1356,7 @@ mod testsuit {
         assert_eq!(paid_count, 2);
 
         // TTL should be fully refreshed
-        let ttl = env.as_contract(&contract_id, || {
-            env.storage().instance().get_ttl()
-        });
+        let ttl = env.as_contract(&contract_id, || env.storage().instance().get_ttl());
         assert!(
             ttl >= 518_400,
             "Instance TTL ({}) must be >= 518,400 after batch_pay_bills",

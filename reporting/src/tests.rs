@@ -1,9 +1,9 @@
 use super::*;
+use soroban_sdk::testutils::storage::Instance as _;
 use soroban_sdk::{
     testutils::{Address as _, Ledger, LedgerInfo},
     Address, Env,
 };
-use soroban_sdk::testutils::storage::Instance as _;
 
 // Mock contracts for testing
 mod remittance_split {
@@ -883,9 +883,7 @@ fn test_instance_ttl_extended_on_init() {
     assert!(result);
 
     // Inspect instance TTL — must be at least INSTANCE_BUMP_AMOUNT
-    let ttl = env.as_contract(&contract_id, || {
-        env.storage().instance().get_ttl()
-    });
+    let ttl = env.as_contract(&contract_id, || env.storage().instance().get_ttl());
     assert!(
         ttl >= 518_400,
         "Instance TTL ({}) must be >= INSTANCE_BUMP_AMOUNT (518,400) after init",
@@ -934,9 +932,7 @@ fn test_instance_ttl_refreshed_on_configure_addresses() {
         &family_wallet,
     );
 
-    let ttl = env.as_contract(&contract_id, || {
-        env.storage().instance().get_ttl()
-    });
+    let ttl = env.as_contract(&contract_id, || env.storage().instance().get_ttl());
     assert!(
         ttl >= 518_400,
         "Instance TTL ({}) must be >= 518,400 after configure_addresses",
@@ -973,12 +969,8 @@ fn test_instance_ttl_refreshed_on_store_report() {
     );
 
     // Generate a report
-    let report = client.get_financial_health_report(
-        &user,
-        &10000i128,
-        &1704067200u64,
-        &1706745600u64,
-    );
+    let report =
+        client.get_financial_health_report(&user, &10000i128, &1704067200u64, &1706745600u64);
 
     // Advance ledger so TTL drops below threshold (17,280)
     env.ledger().set(LedgerInfo {
@@ -996,9 +988,7 @@ fn test_instance_ttl_refreshed_on_store_report() {
     let stored = client.store_report(&user, &report, &202401u64);
     assert!(stored);
 
-    let ttl = env.as_contract(&contract_id, || {
-        env.storage().instance().get_ttl()
-    });
+    let ttl = env.as_contract(&contract_id, || env.storage().instance().get_ttl());
     assert!(
         ttl >= 518_400,
         "Instance TTL ({}) must be >= 518,400 after store_report",
@@ -1048,12 +1038,8 @@ fn test_report_data_persists_across_ledger_advancements() {
         &family_wallet,
     );
 
-    let report = client.get_financial_health_report(
-        &user,
-        &10000i128,
-        &1704067200u64,
-        &1706745600u64,
-    );
+    let report =
+        client.get_financial_health_report(&user, &10000i128, &1704067200u64, &1706745600u64);
     client.store_report(&user, &report, &202401u64);
 
     // Phase 2: Advance to seq 510,000 (reporting contract TTL = 8,500 < 17,280)
@@ -1068,12 +1054,8 @@ fn test_report_data_persists_across_ledger_advancements() {
         max_entry_ttl: 1_200_000,
     });
 
-    let report2 = client.get_financial_health_report(
-        &user,
-        &15000i128,
-        &1706745600u64,
-        &1709424000u64,
-    );
+    let report2 =
+        client.get_financial_health_report(&user, &15000i128, &1706745600u64, &1709424000u64);
     client.store_report(&user, &report2, &202402u64);
 
     // Phase 3: Advance to seq 1,020,000 (TTL = 8,400 < 17,280)
@@ -1090,7 +1072,10 @@ fn test_report_data_persists_across_ledger_advancements() {
 
     // Both reports should be retrievable (read-only, no TTL extension)
     let r1 = client.get_stored_report(&user, &202401u64);
-    assert!(r1.is_some(), "January report must persist across ledger advancements");
+    assert!(
+        r1.is_some(),
+        "January report must persist across ledger advancements"
+    );
 
     let r2 = client.get_stored_report(&user, &202402u64);
     assert!(r2.is_some(), "February report must persist");
@@ -1101,9 +1086,7 @@ fn test_report_data_persists_across_ledger_advancements() {
 
     // TTL should still be positive (read-only ops don't call extend_ttl,
     // but data is still accessible proving TTL hasn't expired)
-    let ttl = env.as_contract(&contract_id, || {
-        env.storage().instance().get_ttl()
-    });
+    let ttl = env.as_contract(&contract_id, || env.storage().instance().get_ttl());
     assert!(
         ttl > 0,
         "Instance TTL ({}) must be > 0 — data persists across ledger advancements",
@@ -1139,12 +1122,8 @@ fn test_archive_ttl_extended_on_archive_reports() {
     );
 
     // Store a report and then archive it
-    let report = client.get_financial_health_report(
-        &user,
-        &10000i128,
-        &1704067200u64,
-        &1706745600u64,
-    );
+    let report =
+        client.get_financial_health_report(&user, &10000i128, &1704067200u64, &1706745600u64);
     client.store_report(&user, &report, &202401u64);
 
     // Advance ledger so TTL drops below threshold before archiving
@@ -1163,9 +1142,7 @@ fn test_archive_ttl_extended_on_archive_reports() {
     // then extend_archive_ttl which is a no-op (TTL already above threshold)
     let archived = client.archive_old_reports(&admin, &2000000000);
 
-    let ttl = env.as_contract(&contract_id, || {
-        env.storage().instance().get_ttl()
-    });
+    let ttl = env.as_contract(&contract_id, || env.storage().instance().get_ttl());
     assert!(
         ttl >= 518_400,
         "Instance TTL ({}) must be >= 518,400 after archiving",

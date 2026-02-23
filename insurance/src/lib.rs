@@ -872,8 +872,8 @@ impl Insurance {
 #[cfg(test)]
 mod test {
     use super::*;
-    use soroban_sdk::testutils::{Address as _, Events, Ledger, LedgerInfo};
     use soroban_sdk::testutils::storage::Instance as _;
+    use soroban_sdk::testutils::{Address as _, Events, Ledger, LedgerInfo};
 
     #[test]
     fn test_create_policy_invalid_premium() {
@@ -1096,9 +1096,7 @@ mod test {
         assert_eq!(policy_id, 1);
 
         // Inspect instance TTL — must be at least INSTANCE_BUMP_AMOUNT
-        let ttl = env.as_contract(&contract_id, || {
-            env.storage().instance().get_ttl()
-        });
+        let ttl = env.as_contract(&contract_id, || env.storage().instance().get_ttl());
         assert!(
             ttl >= 518_400,
             "Instance TTL ({}) must be >= INSTANCE_BUMP_AMOUNT (518,400) after create_policy",
@@ -1154,9 +1152,7 @@ mod test {
         // pay_premium calls extend_instance_ttl → re-extends TTL to 518,400
         client.pay_premium(&owner, &1);
 
-        let ttl = env.as_contract(&contract_id, || {
-            env.storage().instance().get_ttl()
-        });
+        let ttl = env.as_contract(&contract_id, || env.storage().instance().get_ttl());
         assert!(
             ttl >= 518_400,
             "Instance TTL ({}) must be >= 518,400 after pay_premium",
@@ -1231,16 +1227,17 @@ mod test {
 
         // All policies should be accessible
         let p1 = client.get_policy(&policy_id);
-        assert!(p1.is_some(), "First policy must persist across ledger advancements");
+        assert!(
+            p1.is_some(),
+            "First policy must persist across ledger advancements"
+        );
         assert_eq!(p1.unwrap().monthly_premium, 150);
 
         let p2 = client.get_policy(&policy_id2);
         assert!(p2.is_some(), "Second policy must persist");
 
         // TTL should be fully refreshed
-        let ttl = env.as_contract(&contract_id, || {
-            env.storage().instance().get_ttl()
-        });
+        let ttl = env.as_contract(&contract_id, || env.storage().instance().get_ttl());
         assert!(
             ttl >= 518_400,
             "Instance TTL ({}) must remain >= 518,400 after repeated operations",
@@ -1292,9 +1289,7 @@ mod test {
         // deactivate_policy calls extend_instance_ttl
         client.deactivate_policy(&owner, &policy_id);
 
-        let ttl = env.as_contract(&contract_id, || {
-            env.storage().instance().get_ttl()
-        });
+        let ttl = env.as_contract(&contract_id, || env.storage().instance().get_ttl());
         assert!(
             ttl >= 518_400,
             "Instance TTL ({}) must be >= 518,400 after deactivate_policy",

@@ -944,8 +944,8 @@ impl RemittanceSplit {
 #[cfg(test)]
 mod test {
     use super::*;
-    use soroban_sdk::testutils::{Address as _, Events, Ledger, LedgerInfo};
     use soroban_sdk::testutils::storage::Instance as _;
+    use soroban_sdk::testutils::{Address as _, Events, Ledger, LedgerInfo};
 
     #[test]
     fn test_initialize_split_emits_event() {
@@ -1053,9 +1053,7 @@ mod test {
         assert!(result);
 
         // Inspect instance TTL — must be at least INSTANCE_BUMP_AMOUNT
-        let ttl = env.as_contract(&contract_id, || {
-            env.storage().instance().get_ttl()
-        });
+        let ttl = env.as_contract(&contract_id, || env.storage().instance().get_ttl());
         assert!(
             ttl >= 518_400,
             "Instance TTL ({}) must be >= INSTANCE_BUMP_AMOUNT (518,400) after initialize_split",
@@ -1106,9 +1104,7 @@ mod test {
         let result = client.update_split(&owner, &1, &40, &30, &20, &10);
         assert!(result);
 
-        let ttl = env.as_contract(&contract_id, || {
-            env.storage().instance().get_ttl()
-        });
+        let ttl = env.as_contract(&contract_id, || env.storage().instance().get_ttl());
         assert!(
             ttl >= 518_400,
             "Instance TTL ({}) must be >= 518,400 after update_split",
@@ -1173,15 +1169,16 @@ mod test {
 
         // Config should be accessible with updated values
         let config = client.get_config();
-        assert!(config.is_some(), "Config must persist across ledger advancements");
+        assert!(
+            config.is_some(),
+            "Config must persist across ledger advancements"
+        );
         let config = config.unwrap();
         assert_eq!(config.spending_percent, 40);
         assert_eq!(config.savings_percent, 25);
 
         // TTL is still valid (within the second extension window)
-        let ttl = env.as_contract(&contract_id, || {
-            env.storage().instance().get_ttl()
-        });
+        let ttl = env.as_contract(&contract_id, || env.storage().instance().get_ttl());
         assert!(
             ttl > 0,
             "Instance TTL ({}) must be > 0 — data is still live",

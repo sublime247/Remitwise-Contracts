@@ -1,11 +1,11 @@
 #![cfg(test)]
 
 use super::*;
+use soroban_sdk::testutils::storage::Instance as _;
 use soroban_sdk::{
     testutils::{Address as AddressTrait, Events, Ledger, LedgerInfo},
     Address, Env, String,
 };
-use soroban_sdk::testutils::storage::Instance as _;
 
 fn set_time(env: &Env, timestamp: u64) {
     let proto = env.ledger().protocol_version();
@@ -879,9 +879,7 @@ fn test_instance_ttl_extended_on_create_goal() {
     assert!(goal_id > 0);
 
     // Inspect instance TTL — must be at least INSTANCE_BUMP_AMOUNT
-    let ttl = env.as_contract(&contract_id, || {
-        env.storage().instance().get_ttl()
-    });
+    let ttl = env.as_contract(&contract_id, || env.storage().instance().get_ttl());
     assert!(
         ttl >= 518_400,
         "Instance TTL ({}) must be >= INSTANCE_BUMP_AMOUNT (518,400) after create_goal",
@@ -939,9 +937,7 @@ fn test_instance_ttl_refreshed_on_add_to_goal() {
     let new_balance = client.add_to_goal(&user, &goal_id, &500);
     assert_eq!(new_balance, 500);
 
-    let ttl = env.as_contract(&contract_id, || {
-        env.storage().instance().get_ttl()
-    });
+    let ttl = env.as_contract(&contract_id, || env.storage().instance().get_ttl());
     assert!(
         ttl >= 518_400,
         "Instance TTL ({}) must be >= 518,400 after add_to_goal",
@@ -980,12 +976,7 @@ fn test_savings_data_persists_across_ledger_advancements() {
         &10000,
         &2000000000,
     );
-    let id2 = client.create_goal(
-        &user,
-        &String::from_str(&env, "House"),
-        &50000,
-        &2000000000,
-    );
+    let id2 = client.create_goal(&user, &String::from_str(&env, "House"), &50000, &2000000000);
 
     // Phase 2: Advance to seq 510,000 (TTL = 8,500 < 17,280)
     env.ledger().set(LedgerInfo {
@@ -1018,7 +1009,10 @@ fn test_savings_data_persists_across_ledger_advancements() {
 
     // All goals should be accessible with correct data
     let goal1 = client.get_goal(&id1);
-    assert!(goal1.is_some(), "First goal must persist across ledger advancements");
+    assert!(
+        goal1.is_some(),
+        "First goal must persist across ledger advancements"
+    );
     assert_eq!(goal1.unwrap().current_amount, 3000);
 
     let goal2 = client.get_goal(&id2);
@@ -1026,9 +1020,7 @@ fn test_savings_data_persists_across_ledger_advancements() {
     assert_eq!(goal2.unwrap().current_amount, 10000);
 
     // TTL should be fully refreshed
-    let ttl = env.as_contract(&contract_id, || {
-        env.storage().instance().get_ttl()
-    });
+    let ttl = env.as_contract(&contract_id, || env.storage().instance().get_ttl());
     assert!(
         ttl >= 518_400,
         "Instance TTL ({}) must remain >= 518,400 after repeated operations",
@@ -1081,9 +1073,7 @@ fn test_instance_ttl_extended_on_lock_goal() {
     // lock_goal calls extend_instance_ttl
     client.lock_goal(&user, &goal_id);
 
-    let ttl = env.as_contract(&contract_id, || {
-        env.storage().instance().get_ttl()
-    });
+    let ttl = env.as_contract(&contract_id, || env.storage().instance().get_ttl());
     assert!(
         ttl >= 518_400,
         "Instance TTL ({}) must be >= 518,400 after lock_goal",
