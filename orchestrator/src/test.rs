@@ -1,11 +1,7 @@
 // Integration tests for the orchestrator contract
 
 use crate::{Orchestrator, OrchestratorClient, OrchestratorError};
-use soroban_sdk::{
-    contract, contractimpl,
-    testutils::Address as _,
-    Address, Env, Vec,
-};
+use soroban_sdk::{contract, contractimpl, testutils::Address as _, Address, Env, Vec};
 
 // ============================================================================
 // Mock Contract Implementations
@@ -37,7 +33,7 @@ impl MockRemittanceSplit {
         let savings = (total_amount * 30) / 100;
         let bills = (total_amount * 20) / 100;
         let insurance = (total_amount * 10) / 100;
-        
+
         Vec::from_array(&env, [spending, savings, bills, insurance])
     }
 }
@@ -216,7 +212,10 @@ mod tests {
         // This gets interpreted as PermissionDenied (since check_spending_limit
         // and check_family_wallet_permission use the same mock function)
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err().unwrap(), OrchestratorError::PermissionDenied);
+        assert_eq!(
+            result.unwrap_err().unwrap(),
+            OrchestratorError::PermissionDenied
+        );
     }
 
     #[test]
@@ -337,14 +336,14 @@ mod tests {
         assert!(result.is_ok());
 
         let flow_result = result.unwrap().unwrap();
-        
+
         // Verify allocations (40%, 30%, 20%, 10%)
         assert_eq!(flow_result.total_amount, 10000);
         assert_eq!(flow_result.spending_amount, 4000);
         assert_eq!(flow_result.savings_amount, 3000);
         assert_eq!(flow_result.bills_amount, 2000);
         assert_eq!(flow_result.insurance_amount, 1000);
-        
+
         // Verify all operations succeeded
         assert!(flow_result.savings_success);
         assert!(flow_result.bills_success);
@@ -452,7 +451,10 @@ mod tests {
         // This gets interpreted as PermissionDenied (since check_spending_limit
         // and check_family_wallet_permission use the same mock function)
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err().unwrap(), OrchestratorError::PermissionDenied);
+        assert_eq!(
+            result.unwrap_err().unwrap(),
+            OrchestratorError::PermissionDenied
+        );
     }
 
     #[test]
@@ -486,7 +488,10 @@ mod tests {
 
         // Should fail with InvalidAmount
         assert!(result.is_err());
-        assert_eq!(result.unwrap_err().unwrap(), OrchestratorError::InvalidAmount);
+        assert_eq!(
+            result.unwrap_err().unwrap(),
+            OrchestratorError::InvalidAmount
+        );
     }
 
     #[test]
@@ -497,7 +502,7 @@ mod tests {
 
         // Get initial stats (should be all zeros)
         let stats = client.get_execution_stats();
-        
+
         assert_eq!(stats.total_flows_executed, 0);
         assert_eq!(stats.total_flows_failed, 0);
         assert_eq!(stats.total_amount_processed, 0);
@@ -512,7 +517,7 @@ mod tests {
 
         // Get audit log (should be empty initially)
         let log = client.get_audit_log(&0, &10);
-        
+
         assert_eq!(log.len(), 0);
     }
 }

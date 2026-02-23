@@ -870,14 +870,11 @@ impl FamilyWallet {
     /// - Non-members: Cannot spend (returns false)
     pub fn check_spending_limit(env: Env, caller: Address, amount: i128) -> bool {
         // Get members map
-        let members: Map<Address, FamilyMember> = match env
-            .storage()
-            .instance()
-            .get(&symbol_short!("MEMBERS"))
-        {
-            Some(m) => m,
-            None => return false, // Wallet not initialized
-        };
+        let members: Map<Address, FamilyMember> =
+            match env.storage().instance().get(&symbol_short!("MEMBERS")) {
+                Some(m) => m,
+                None => return false, // Wallet not initialized
+            };
 
         // Check if caller is a member
         let member = match members.get(caller.clone()) {
