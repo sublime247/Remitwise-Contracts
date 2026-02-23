@@ -827,3 +827,294 @@ fn test_multiple_goals_emit_separate_events() {
     let events = env.events().all();
     assert_eq!(events.len(), 6);
 }
+
+#[test]
+fn test_get_goals_paginated_empty_owner() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, SavingsGoalContract);
+    let client = SavingsGoalContractClient::new(&env, &contract_id);
+    let user = Address::generate(&env);
+    let empty_user = Address::generate(&env);
+
+    client.init();
+    env.mock_all_auths();
+
+    // Create goals for user but not for empty_user
+    client.create_goal(&user, &String::from_str(&env, "Goal 1"), &1000, &1735689600);
+    client.create_goal(&user, &String::from_str(&env, "Goal 2"), &2000, &1735689600);
+
+    // Test pagination for empty owner
+    let response = client.get_goals_paginated(&empty_user, &None, &Some(10));
+    assert_eq!(response.goals.len(), 0);
+    assert!(!response.has_more);
+    assert_eq!(response.next_cursor, None);
+}
+
+#[test]
+fn test_get_goals_paginated_single_page() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, SavingsGoalContract);
+    let client = SavingsGoalContractClient::new(&env, &contract_id);
+    let user = Address::generate(&env);
+
+    client.init();
+    env.mock_all_auths();
+
+    // Create 3 goals
+    let goal1 = client.create_goal(&user, &String::from_str(&env, "Goal 1"), &1000, &1735689600);
+    let goal2 = client.create_goal(&user, &String::from_str(&env, "Goal 2"), &2000, &1735689600);
+    let goal3 = client.create_goal(&user, &String::from_str(&env, "Goal 3"), &3000, &1735689600);
+
+    // Test single page with limit 10 (should return all goals)
+    let response = client.get_goals_paginated(&user, &None, &Some(10));
+    assert_eq!(response.goals.len(), 3);
+    assert!(!response.has_more);
+    assert_eq!(response.next_cursor, None);
+
+    // Verify goal IDs in response
+    let mut goal_ids = Vec::new(&env);
+    for i in 0..response.goals.len() {
+        if let Some(goal) = response.goals.get(i) {
+            goal_ids.push_back(goal.id);
+        }
+    }
+    assert!(goal_ids.contains(&goal1));
+    assert!(goal_ids.contains(&goal2));
+    assert!(goal_ids.contains(&goal3));
+}
+
+#[test]
+fn test_get_goals_paginated_multiple_pages() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, SavingsGoalContract);
+    let client = SavingsGoalContractClient::new(&env, &contract_id);
+    let user = Address::generate(&env);
+
+    client.init();
+    env.mock_all_auths();
+
+    // Create 5 goals
+    let goal1 = client.create_goal(&user, &String::from_str(&env, "Goal 1"), &1000, &1735689600);
+    let goal2 = client.create_goal(&user, &String::from_str(&env, "Goal 2"), &2000, &1735689600);
+    let goal3 = client.create_goal(&user, &String::from_str(&env, "Goal 3"), &3000, &1735689600);
+    let goal4 = client.create_goal(&user, &String::from_str(&env, "Goal 4"), &4000, &1735689600);
+    let goal5 = client.create_goal(&user, &String::from_str(&env, "Goal 5"), &5000, &1735689600);
+
+    // Test first page with limit 2
+    let page1 = client.get_goals_paginated(&user, &None, &Some(2));
+    assert_eq!(page1.goals.len(), 2);
+    assert!(page1.has_more);
+    assert!(page1.next_cursor.is_some());
+
+    // Test second page using cursor
+    let page2 = client.get_goals_paginated(&user, &page1.next_cursor, &Some(2));
+    assert_eq!(page2.goals.len(), 2);
+    assert!(page2.has_more);
+    assert!(page2.next_cursor.is_some());
+
+    // Test third page using cursor
+    let page3 = client.get_goals_paginated(&user, &page2.next_cursor, &Some(2));
+    assert_eq!(page3.goals.len(), 1);
+    assert!(!page3.has_more);
+    assert_eq!(page3.next_cursor, None);
+
+    // Verify all goals are returned across pages
+    let mut all_goals = Vec::new(&env);
+    
+    // Add goals from page1
+    for i in 0..page1.goals.len() {
+        if let Some(goal) = page1.goals.get(i) {
+            all_goals.push_back(goal.id);
+        }
+    }
+    
+    // Add goals from page2
+    for i in 0..page2.goals.len() {
+        if let Some(goal) = page2.goals.get(i) {
+            all_goals.push_back(goal.id);
+        }
+    }
+    
+    // Add goals from page3
+    for i in 0..page3.goals.len() {
+        if let Some(goal) = page3.goals.get(i) {
+            all_goals.push_back(goal.id);
+        }
+    }
+    
+    assert_eq!(all_goals.len(), 5);
+    assert!(all_goals.contains(&goal1));
+    assert!(all_goals.contains(&goal2));
+    assert!(all_goals.contains(&goal3));
+    assert!(all_goals.contains(&goal4));
+    assert!(all_goals.contains(&goal5));
+}
+
+#[test]
+fn test_get_goals_paginated_default_limit() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, SavingsGoalContract);
+    let client = SavingsGoalContractClient::new(&env, &contract_id);
+    let user = Address::generate(&env);
+
+    client.init();
+    env.mock_all_auths();
+
+    // Create 25 goals (more than default limit of 20)
+    let goal_names = [
+        "Goal 0", "Goal 1", "Goal 2", "Goal 3", "Goal 4",
+        "Goal 5", "Goal 6", "Goal 7", "Goal 8", "Goal 9",
+        "Goal 10", "Goal 11", "Goal 12", "Goal 13", "Goal 14",
+        "Goal 15", "Goal 16", "Goal 17", "Goal 18", "Goal 19",
+        "Goal 20", "Goal 21", "Goal 22", "Goal 23", "Goal 24"
+    ];
+    
+    for i in 0..25 {
+        client.create_goal(
+            &user, 
+            &String::from_str(&env, goal_names[i]), 
+            &(1000 + i as i128), 
+            &1735689600
+        );
+    }
+
+    // Test with default limit (None)
+    let response = client.get_goals_paginated(&user, &None, &None);
+    assert_eq!(response.goals.len(), 20); // Default limit
+    assert!(response.has_more);
+    assert!(response.next_cursor.is_some());
+}
+
+#[test]
+fn test_get_goals_paginated_max_limit_enforcement() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, SavingsGoalContract);
+    let client = SavingsGoalContractClient::new(&env, &contract_id);
+    let user = Address::generate(&env);
+
+    client.init();
+    env.mock_all_auths();
+
+    // Create 25 goals (more than max limit of 100 for testing)
+    let goal_names = [
+        "Goal 0", "Goal 1", "Goal 2", "Goal 3", "Goal 4",
+        "Goal 5", "Goal 6", "Goal 7", "Goal 8", "Goal 9",
+        "Goal 10", "Goal 11", "Goal 12", "Goal 13", "Goal 14",
+        "Goal 15", "Goal 16", "Goal 17", "Goal 18", "Goal 19",
+        "Goal 20", "Goal 21", "Goal 22", "Goal 23", "Goal 24"
+    ];
+    
+    for i in 0..25 {
+        client.create_goal(
+            &user, 
+            &String::from_str(&env, goal_names[i]), 
+            &(1000 + i as i128), 
+            &1735689600
+        );
+    }
+
+    // Test with limit exceeding max (200 should be capped to 100, but we only have 25)
+    let response = client.get_goals_paginated(&user, &None, &Some(200));
+    assert_eq!(response.goals.len(), 25); // All goals returned since we only have 25
+    assert!(!response.has_more);
+    assert_eq!(response.next_cursor, None);
+}
+
+#[test]
+fn test_get_goals_paginated_minimum_limit() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, SavingsGoalContract);
+    let client = SavingsGoalContractClient::new(&env, &contract_id);
+    let user = Address::generate(&env);
+
+    client.init();
+    env.mock_all_auths();
+
+    // Create 5 goals
+    let goal_names = ["Goal 0", "Goal 1", "Goal 2", "Goal 3", "Goal 4"];
+    
+    for i in 0..5 {
+        client.create_goal(
+            &user, 
+            &String::from_str(&env, goal_names[i]), 
+            &(1000 + i as i128), 
+            &1735689600
+        );
+    }
+
+    // Test with limit 0 (should be treated as 1)
+    let response = client.get_goals_paginated(&user, &None, &Some(0));
+    assert_eq!(response.goals.len(), 1); // Minimum limit enforced
+    assert!(response.has_more);
+    assert!(response.next_cursor.is_some());
+}
+
+#[test]
+fn test_get_goals_paginated_cursor_behavior() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, SavingsGoalContract);
+    let client = SavingsGoalContractClient::new(&env, &contract_id);
+    let user = Address::generate(&env);
+
+    client.init();
+    env.mock_all_auths();
+
+    // Create 3 goals
+    let goal1 = client.create_goal(&user, &String::from_str(&env, "Goal 1"), &1000, &1735689600);
+    let goal2 = client.create_goal(&user, &String::from_str(&env, "Goal 2"), &2000, &1735689600);
+    let goal3 = client.create_goal(&user, &String::from_str(&env, "Goal 3"), &3000, &1735689600);
+
+    // Test first page with limit 1
+    let page1 = client.get_goals_paginated(&user, &None, &Some(1));
+    assert_eq!(page1.goals.len(), 1);
+    assert!(page1.has_more);
+    assert!(page1.next_cursor.is_some());
+    
+    // Check which goal is on first page
+    let first_goal_id = page1.goals.get(0).unwrap().id;
+    assert_eq!(first_goal_id, goal1);
+    assert_eq!(page1.next_cursor.unwrap(), goal1);
+
+    // Test second page using cursor
+    let page2 = client.get_goals_paginated(&user, &page1.next_cursor, &Some(1));
+    assert_eq!(page2.goals.len(), 1);
+    assert!(page2.has_more);
+    assert!(page2.next_cursor.is_some());
+    
+    // Check which goal is on second page
+    let second_goal_id = page2.goals.get(0).unwrap().id;
+    assert_eq!(second_goal_id, goal2);
+    assert_eq!(page2.next_cursor.unwrap(), goal2);
+
+    // Test third page using cursor
+    let page3 = client.get_goals_paginated(&user, &page2.next_cursor, &Some(1));
+    assert_eq!(page3.goals.len(), 1);
+    assert!(!page3.has_more);
+    assert_eq!(page3.next_cursor, None);
+    
+    // Check which goal is on third page
+    let third_goal_id = page3.goals.get(0).unwrap().id;
+    assert_eq!(third_goal_id, goal3);
+}
+
+#[test]
+fn test_get_goals_paginated_cursor_not_found() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, SavingsGoalContract);
+    let client = SavingsGoalContractClient::new(&env, &contract_id);
+    let user = Address::generate(&env);
+
+    client.init();
+    env.mock_all_auths();
+
+    // Create 3 goals
+    client.create_goal(&user, &String::from_str(&env, "Goal 1"), &1000, &1735689600);
+    client.create_goal(&user, &String::from_str(&env, "Goal 2"), &2000, &1735689600);
+    client.create_goal(&user, &String::from_str(&env, "Goal 3"), &3000, &1735689600);
+
+    // Test with cursor that doesn't exist (999)
+    let response = client.get_goals_paginated(&user, &Some(999), &Some(10));
+    assert_eq!(response.goals.len(), 0); // Should return empty since cursor not found
+    assert!(!response.has_more);
+    assert_eq!(response.next_cursor, None);
+}
