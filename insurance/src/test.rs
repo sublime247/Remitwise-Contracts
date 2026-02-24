@@ -749,3 +749,41 @@ fn test_deactivate_policy_emits_event() {
     assert_eq!(data, (policy_id, owner.clone()));
     assert_eq!(audit_event.0, contract_id.clone());
 }
+
+#[test]
+fn test_new_policy_initial_state() {
+    // New policies must start active with next_payment_date set to creation time + 30 days.
+    // This ensures frontends and premium-reminder logic display correct "next due" information.
+    let env = Env::default();
+    let contract_id = env.register_contract(None, Insurance);
+    let client = InsuranceClient::new(&env, &contract_id);
+    let owner = Address::generate(&env);
+
+    env.mock_all_auths();
+
+    // Set a known timestamp for predictable testing
+    set_time(&env, 10000);
+    let creation_timestamp = env.ledger().timestamp();
+
+    // Create a policy
+    let policy_id = client.create_policy(
+        &owner,
+        &String::from_str(&env, "Test Policy"),
+        &String::from_str(&env, "health"),
+        &150,   // monthly_premium
+        &25000, // coverage_amount
+    );
+
+    // Retrieve the policy immediately after creation
+    let policy = client.get_policy(&policy_id).unwrap();
+
+    // Assert: Policy must be active by default
+    assert!(policy.active, "New policy should be active");
+
+    // Assert: next_payment_date must be creation_timestamp + 30 days (in seconds)
+    let expected_next_payment = creation_timestamp + (30 * 86400);
+    assert_eq!(
+        policy.next_payment_date, expected_next_payment,
+        "New policy next_payment_date should be creation time + 30 days"
+    );
+}
